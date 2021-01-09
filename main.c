@@ -94,7 +94,7 @@ int main(int argc, char **argv)
   // ordinaryKriging(samplePoints, samplePointNumbers, variogramModel, lag, lagNumbers, minNeighbors, maxNeighbors, sectorType, rasterCellSize);
   struct Points krigingPoints = {samplePoints, samplePointNumbers};
   struct SemivariogramOption semivarOption = {lag, lagNumbers, variogramModel};
-  struct NeighborhoodOption neighborOption = {sectorType, 2, 5, -1};
+  struct NeighborhoodOption neighborOption = {sectorType, 2, 5, 100000};
   ordinaryKriging(&krigingPoints, &semivarOption, &neighborOption, NULL);
 
   return 0;

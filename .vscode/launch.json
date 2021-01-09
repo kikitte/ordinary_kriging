@@ -10,7 +10,7 @@
       "request": "launch",
       "program": "${workspaceFolder}/build/ordinary_kriging",
       "args": [
-        "chap15/stations.txt",
+        "chap15/stations.csv",
         "2",
         "40000",
         "12",

@@ -17,11 +17,35 @@ struct PointsIndex
   int numbers;
 };
 
-// 记录两点的index及其距离
+// 记录扇区的id及其包含的临近点数量
+struct NeighbordSector
+{
+  int id;
+  int count;
+  int minPointCount; // 扇区内容许的最大样本点数量
+  int maxPointCount; // 扇区内容许的最小样本点数量
+  double angleFrom;  // 起始角度
+  double angleTo;    // 终止角度
+};
+
+struct NeighbordSectorsWrap
+{
+  struct NeighbordSector *sectors;
+  int count;
+};
+
+// 记录用于样本点两点的index及其距离
 struct PointPairDistance
 {
   int fromIndex;
   int toIndex;
+  double distance;
+};
+
+// 记录像元中心点和插值样本点
+struct PointPixelDistance
+{
+  int index;
   double distance;
 };
 
