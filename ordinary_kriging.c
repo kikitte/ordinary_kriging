@@ -6,20 +6,21 @@
 #include "variogram.h"
 #include "constants.h"
 
-#define BINNING_DEBUG
+// #define BINNING_DEBUG
+#define MAKE_SECTORS_DEBUG
 
 // 在没有制定输出栅格参数时根据已有条件生成默认参数
 struct RasterInfo *deafultRasterFromPoints(struct Points *points);
 // 根据扇区类型搜索用于克里金插值的点
-int searchNeighborhoods(double x, double y, int *neighbords, struct Points *points, struct NeighborhoodOption *neighborOpt, struct NeighbordSectorsWrap *sectorsWrap, struct PointPixelDistance *pointPixelDistanceCache);
+int searchNeighborhoods(double x, double y, int *neighbords, struct Points *points, struct NeighborhoodOption *neighborOpt, struct NeighbordSectorsWrap *sectorsWrap, struct DistanceAngleToCentroid *distanceAngleToCentroidCache);
 // 区间分组：用于计算适配模型的参数
 void binning(struct Points *points, struct SemivariogramOption *semivarOpt, int *lagsSemivarCount, double *lagsSemivarSum, struct PointPairDistance *pointPairDistance);
+// 在qsort函数里边用于比较两个PointPixelDistance结构体数组角度的函数
+int angleToCentroidCmp(struct DistanceAngleToCentroid **a, struct DistanceAngleToCentroid **b);
 // 在qsort函数里边用于比较两个PointPixelDistance结构体数组距离的函数
-int pointPixelDistanceCmp(struct PointPixelDistance *a, struct PointPixelDistance *b);
+int distanceToCentroidCmp(struct DistanceAngleToCentroid **a, struct DistanceAngleToCentroid **b);
 // 根据临近点搜索条件生成sectors
 struct NeighbordSectorsWrap *makeSectors(struct NeighborhoodOption *neighborOpt);
-// 将样本点分配到扇区，成功返回真值、失败返回假值
-int distributePointIntoSectors(double distance, double angle, struct NeighbordSectorsWrap *sectorsWrap);
 
 // struct PointPixelDistance **pointPixelDistance = NULL;
 
@@ -47,14 +48,14 @@ double *ordinaryKriging(struct Points *points,
   //    根据需要生成lag & lagNumbers
 
   // 2. 计算扇区参数
-  // 即使pointPixelDistance被修改了，由于保存最原始的指针地址，我们也还是能正确释放他
-  struct PointPixelDistance *pointPixelDistance = malloc(sizeof(struct PointPixelDistance) * pointNumbers);
+  struct DistanceAngleToCentroid *distanceAngleToCentroidCache = malloc(sizeof(struct DistanceAngleToCentroid) * pointNumbers);
   struct NeighbordSectorsWrap *sectorsWrap = makeSectors(neighborOpt);
 
   // 3. 栅格点插值
-  int *neightborsIndex = malloc(sizeof(int) * pointNumbers);
+  int *neightbors = malloc(sizeof(int) * pointNumbers);
   double *rasterArray_ = malloc(sizeof(double) * rasterInfo->xsize * rasterInfo->ysize); // 栅格以行存储
   double *rasterArray = rasterArray_;
+
   for (int x = 0; x < rasterInfo->xsize; ++x)
   {
     double ptx = rasterInfo->left + rasterInfo->resolution * (x + 0.5);
@@ -62,17 +63,16 @@ double *ordinaryKriging(struct Points *points,
     {
       double pty = rasterInfo->top - rasterInfo->resolution * (y + 0.5);
       // 搜索用于插值的临近样本点
-      int neighordsCount = searchNeighborhoods(ptx, pty, neightborsIndex, points, neighborOpt, sectorsWrap, pointPixelDistance);
+      int neighordsCount = searchNeighborhoods(ptx, pty, neightbors, points, neighborOpt, sectorsWrap, distanceAngleToCentroidCache);
       if (neighordsCount)
       {
-        printf("%d, %f, %f; ", neighordsCount, ptx, pty);
-        // *rasterArray++ = result;
+        // TODO: 获取到临近点之后进行更进一步的计算
       }
     }
   }
 
   free(rasterArray_);
-  free(pointPixelDistance);
+  free(distanceAngleToCentroidCache);
   free(sectorsWrap->sectors);
   free(sectorsWrap);
   if (isDefaultRasterInfo)
@@ -192,24 +192,18 @@ struct RasterInfo *deafultRasterFromPoints(struct Points *points)
   return info;
 }
 
-int searchNeighborhoods(double x, double y, int *neighbords, struct Points *points, struct NeighborhoodOption *neighborOpt, struct NeighbordSectorsWrap *sectorsWrap, struct PointPixelDistance *pointPixelDistanceCache)
+int searchNeighborhoods(double x, double y, int *neighbords, struct Points *points, struct NeighborhoodOption *neighborOpt, struct NeighbordSectorsWrap *sectorsWrap, struct DistanceAngleToCentroid *distanceAngleToCentroidCache)
 {
-  // 重置pointPixelDistanceCache数组
-  int alternativeNeighbordsCount;
-  for (int i = 0; i < points->numbers; ++i)
-  {
-    pointPixelDistanceCache[i].index = -1;
-  }
-
   const double *pointsData = points->data;
+  const int pointsNumber = points->numbers;
   const double maxDistance = neighborOpt->maxDistance < 0 ? DBL_MAX : neighborOpt->maxDistance;
   const int sectorType = neighborOpt->sectorType;
   const int minNeighbords = neighborOpt->minNeighbords;
   const int maxNeighbords = neighborOpt->maxNeighbords;
 
-  // 首先计算栅格像素中心点（x, y）同各样本点的距离
-  alternativeNeighbordsCount = 0;
-  for (int i = 0; i < points->numbers; ++i)
+  // 首先计算栅格像素中心点（x, y）同各样本点的距离 & 角度
+  int alternativeNeighbordsCount = 0;
+  for (int i = 0; i < pointsNumber; ++i)
   {
     int pointBaseIndex = i * 3;
     // 样本点的x, y坐标
@@ -217,94 +211,122 @@ int searchNeighborhoods(double x, double y, int *neighbords, struct Points *poin
     double distance = sqrt(pow(x - pointX, 2) + pow(y - pointY, 2));
     if (distance < maxDistance)
     {
-      struct PointPixelDistance *ppxd = &pointPixelDistanceCache[alternativeNeighbordsCount++];
+      struct DistanceAngleToCentroid *ppxd = &distanceAngleToCentroidCache[alternativeNeighbordsCount++];
       ppxd->index = i;
       ppxd->distance = distance;
-    }
-  }
-  // 到这里已经记录下所有满足距离条件的样本点index, 下一步根据距离进行对pointPixelDistance数组进行排序，得到距离从小到大的临近点排行
-  struct PointPixelDistance **distanceAscendingCache[points->numbers];
-  for (int i = 0; i < points->numbers; ++i)
-  {
-    distanceAscendingCache[i] = &pointPixelDistanceCache[i];
-  }
-  qsort(distanceAscendingCache, alternativeNeighbordsCount, sizeof(struct PointPixelDistance *), pointPixelDistanceCmp);
-  // 从距离由近及远迭代alternativePoints，对每一个临近点尝试将其分入扇区，直到碰到不能分入任何扇区的点才结束
-  int neighbordsCount = 0;
-  for (int i = 0; i < alternativeNeighbordsCount; ++i)
-  {
-    struct PointPixelDistance *pointPixelDistance = distanceAscendingCache[i];
-    int pointBaseIndex = pointPixelDistance->index * 3;
-    double pointX = pointsData[pointBaseIndex], pointY = pointsData[pointBaseIndex + 1];
-    double distance = pointPixelDistance->distance;
-    double angle = asin(pointX / distance); // 样本点与像元中心点连线与网格北方向的夹角
-    // 以下对角度进行一些转换以确保是与网格北方向的夹角
-    if (angle > 0)
-    {
-      if (pointY < 0)
-        angle += M_PI_2;
-    }
-    else if (angle < 0)
-    {
-      angle += M_2PI;
-      if (pointY < 0)
-        angle -= M_PI_2;
-    }
-    else
-    {
-      if (pointY > 0)
-        angle = 0;
-      else if (pointY < 0)
-        angle = M_PI;
+
+      pointX -= x;
+      pointY -= y;
+      if (pointX == 0 && pointY == 0)
+      {
+        // TODO: 处理特殊情况，样本点与栅格像元中心点重合
+        // 目前做法是忽略该点
+        --alternativeNeighbordsCount;
+        continue;
+      }
       else
       {
-        // TODO： 特殊情况已知点与待插值点空间位置完全一样
-        continue;
+        double angle = -atan2(pointY, pointX);
+        angle += (angle < 0 ? M_2PI : 0);
+        angle += M_PI_2;
+        angle -= (angle > M_2PI ? M_2PI : 0);
+
+        ppxd->angle = angle;
+      }
+    }
+  }
+
+  // 记录按照样本点与中心点角度排序
+  struct DistanceAngleToCentroid *angleAscendingCache[alternativeNeighbordsCount];
+  // 记录按照样本点与中心点距离排序
+  struct DistanceAngleToCentroid *distanceAscendingCache[alternativeNeighbordsCount];
+
+  for (int i = 0; i < alternativeNeighbordsCount; ++i)
+  {
+    angleAscendingCache[i] = &distanceAngleToCentroidCache[i];
+  }
+  qsort(angleAscendingCache, alternativeNeighbordsCount, sizeof(struct DistanceAngleToCentroid *), angleToCentroidCmp);
+
+  // Note: 样本点与中心点的角度范围为[0, 2PI)
+  double pointsMinAngle = ((struct DistanceAngleToCentroid *)(angleAscendingCache[0]))->angle,
+         pointsMaxAngle = ((struct DistanceAngleToCentroid *)(angleAscendingCache[alternativeNeighbordsCount - 1]))->angle;
+
+  // 迭代每一个扇区，然后将满足角度条件的点按距离由近及远排序。
+  int neighbordsCount = 0;
+  int lastAngleEndIndex = 0;
+  for (int i = 0; i < sectorsWrap->count; ++i)
+  {
+    struct NeighbordSector *sector = &sectorsWrap->sectors[i];
+    double sectorAngleFrom = sector->angleFrom;
+    double sectorAngleTo = sector->angleTo;
+    int sectorAlternativeNeighbordsCount = 0;
+
+    // 迭代每一个样本点，如果该样本点的角度落入扇区，则将其记录
+    // 之后将这些样本点按照距离排序，再按照距离远近和扇区能够容纳的样本点数量将其纳入扇区
+
+    for (int j = 0; j < alternativeNeighbordsCount; ++j)
+    {
+      double angle = ((struct DistanceAngleToCentroid *)(angleAscendingCache[j]))->angle;
+      double angleAdd2PI = angle + M_2PI;
+      if ((angle >= sectorAngleFrom && angle < sectorAngleTo) || (angleAdd2PI >= sectorAngleFrom && angleAdd2PI < sectorAngleTo))
+      {
+        distanceAscendingCache[sectorAlternativeNeighbordsCount++] = angleAscendingCache[j];
       }
     }
 
-    if (distributePointIntoSectors(distance, angle, sectorsWrap))
+    if (!sectorAlternativeNeighbordsCount)
     {
-      neighbords[neighbordsCount++] = pointPixelDistance->index;
+      continue;
     }
-    else
+
+    qsort(distanceAscendingCache, sectorAlternativeNeighbordsCount, sizeof(struct DistanceAngleToCentroid *), distanceToCentroidCmp);
+
+    for (int j = 0; j < sectorAlternativeNeighbordsCount; ++j)
     {
-      break;
+      struct DistanceAngleToCentroid *point = distanceAscendingCache[j];
+      if (sector->count < sector->maxPointCount)
+      {
+        neighbords[neighbordsCount++] = point->index;
+        ++sector->count;
+      }
+      else
+      {
+        break;
+      }
+    }
+
+    // 检查扇区角度范围内是否有样本点
+    // TODO: 已知样本点与中心点的角度范围为[0, 2PI)，扇区角度范围并不一定在[0, 2P])内，所以会存在问题
+    if (sectorAngleFrom > pointsMaxAngle || sectorAngleTo <= pointsMinAngle)
+    {
+      // 该扇区角度范围内没有样本点
+      continue;
     }
   }
-  // TODO: 某个扇区的样本点数目不够的话将其丢弃？
+  // TODO: 某个扇区的样本点数目不够的话将其丢弃？ ArcGIS的做法并没有将其丢弃
 
   return neighbordsCount;
 }
 
-int distributePointIntoSectors(double distance, double angle, struct NeighbordSectorsWrap *sectorsWrap)
+int angleToCentroidCmp(struct DistanceAngleToCentroid **a, struct DistanceAngleToCentroid **b)
 {
-  for (int i = 0; i < sectorsWrap->count; ++i)
-  {
-    struct NeighbordSector *sector = &sectorsWrap->sectors[i];
+  double angleA = (*a)->angle, angleB = (*b)->angle;
 
-    if ((angle >= sector->angleFrom && angle < sector->angleTo) || (angle + M_2PI >= sector->angleFrom && angle + M_2PI < sector->angleTo))
-    {
-
-      // 已经满足角度条件
-      // 检查该扇区内样本点是否够数了
-      if (sector->count < sector->maxPointCount)
-      {
-        return 1;
-      }
-      else
-      {
-        return 0;
-      }
-    }
-  }
+  if (angleA < angleB)
+    return -1;
+  if (angleA > angleB)
+    return 1;
   return 0;
 }
 
-int pointPixelDistanceCmp(struct PointPixelDistance *a, struct PointPixelDistance *b)
+int distanceToCentroidCmp(struct DistanceAngleToCentroid **a, struct DistanceAngleToCentroid **b)
 {
-  double aD = a->distance, bD = b->distance;
-  return (aD > bD) - (aD < bD);
+  double distanceA = (*a)->distance, distanceB = (*b)->distance;
+  if (distanceA < distanceB)
+    return -1;
+  if (distanceA > distanceB)
+    return 1;
+  return 0;
 }
 
 struct NeighbordSectorsWrap *makeSectors(struct NeighborhoodOption *neighborOpt)
@@ -354,11 +376,16 @@ struct NeighbordSectorsWrap *makeSectors(struct NeighborhoodOption *neighborOpt)
     }
   }
 
+#ifdef MAKE_SECTORS_DEBUG
+
+  puts("sectors:");
   for (int i = 0; i < sectorsCount; ++i)
   {
     struct NeighbordSector *sector = &sectors[i];
-    printf("id=%d, count=%d, angleFrom=%f, angleTo=%f\n", sector->id, sector->count, sector->angleFrom, sector->angleTo);
+    printf("\tid=%d, count=%d, angleFrom=%f, angleTo=%f\n", sector->id, sector->count, sector->angleFrom, sector->angleTo);
   }
+
+#endif
 
   struct NeighbordSectorsWrap *sectorsWrap = malloc(sizeof(struct NeighbordSectorsWrap));
 

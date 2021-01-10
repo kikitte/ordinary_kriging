@@ -22,10 +22,10 @@ struct NeighbordSector
 {
   int id;
   int count;
-  int minPointCount; // 扇区内容许的最大样本点数量
-  int maxPointCount; // 扇区内容许的最小样本点数量
-  double angleFrom;  // 起始角度
-  double angleTo;    // 终止角度
+  int minPointCount; // 扇区内容许的最大样本点数量(includsive)
+  int maxPointCount; // 扇区内容许的最小样本点数量(includsive)
+  double angleFrom;  // 起始角度(includsive: 如果样本点角度等于起始角度则将该点纳入扇区)
+  double angleTo;    // 终止角度(excludsive: 如果样本点角度等于终止角度则不将该点纳入扇区)
 };
 
 struct NeighbordSectorsWrap
@@ -34,7 +34,7 @@ struct NeighbordSectorsWrap
   int count;
 };
 
-// 记录用于样本点两点的index及其距离
+// // 记录样本点到像元中心点的角度与距离
 struct PointPairDistance
 {
   int fromIndex;
@@ -42,11 +42,12 @@ struct PointPairDistance
   double distance;
 };
 
-// 记录像元中心点和插值样本点
-struct PointPixelDistance
+// 记录像元中心点和插值样本点的距离与角度（连线与网格北方向的夹角）
+struct DistanceAngleToCentroid
 {
   int index;
   double distance;
+  double angle;
 };
 
 struct RasterInfo
