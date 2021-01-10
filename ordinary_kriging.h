@@ -71,7 +71,7 @@ struct NeighborhoodOption
   int sectorType;     // 临近点搜索的扇区类型
   int minNeighbords;  // 最小临近点数量
   int maxNeighbords;  // 最大临近点数量
-  double maxDistance; // 每个扇区最大搜索距离，负数和零表示无限大
+  double maxDistance; // 每个扇区最大搜索距离
 };
 
 double *ordinaryKriging(struct Points *points,

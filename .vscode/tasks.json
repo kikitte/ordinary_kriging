@@ -5,6 +5,7 @@
       "label": "ordinary kriging",
       "command": "/usr/bin/gcc",
       "args": [
+        "-O2",
         "-g",
         "-lm",
         "${workspaceFolder}/main.c",

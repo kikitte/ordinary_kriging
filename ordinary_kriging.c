@@ -194,37 +194,27 @@ struct RasterInfo *deafultRasterFromPoints(struct Points *points)
 
 int searchNeighborhoods(double x, double y, int *neighbords, struct Points *points, struct NeighborhoodOption *neighborOpt, struct NeighbordSectorsWrap *sectorsWrap, struct DistanceAngleToCentroid *distanceAngleToCentroidCache)
 {
-  const double *pointsData = points->data;
+  double *pointsData = points->data;
   const int pointsNumber = points->numbers;
-  const double maxDistance = neighborOpt->maxDistance < 0 ? DBL_MAX : neighborOpt->maxDistance;
+  const double maxDistance = neighborOpt->maxDistance;
   const int sectorType = neighborOpt->sectorType;
   const int minNeighbords = neighborOpt->minNeighbords;
   const int maxNeighbords = neighborOpt->maxNeighbords;
 
   // 首先计算栅格像素中心点（x, y）同各样本点的距离 & 角度
   int alternativeNeighbordsCount = 0;
-  for (int i = 0; i < pointsNumber; ++i)
+  for (int i = 0; i < pointsNumber; ++i, ++pointsData)
   {
-    int pointBaseIndex = i * 3;
-    // 样本点的x, y坐标
-    double pointX = pointsData[pointBaseIndex], pointY = pointsData[pointBaseIndex + 1];
-    double distance = sqrt(pow(x - pointX, 2) + pow(y - pointY, 2));
+    // 样本点相对于像元中心点的坐标
+    double pointX = *pointsData++ - x, pointY = *pointsData++ - y;
+    double distance = sqrt(pointX * pointX + pointY * pointY);
     if (distance < maxDistance)
     {
       struct DistanceAngleToCentroid *ppxd = &distanceAngleToCentroidCache[alternativeNeighbordsCount++];
       ppxd->index = i;
       ppxd->distance = distance;
 
-      pointX -= x;
-      pointY -= y;
-      if (pointX == 0 && pointY == 0)
-      {
-        // TODO: 处理特殊情况，样本点与栅格像元中心点重合
-        // 目前做法是忽略该点
-        --alternativeNeighbordsCount;
-        continue;
-      }
-      else
+      if (distance)
       {
         double angle = -atan2(pointY, pointX);
         angle += (angle < 0 ? M_2PI : 0);
@@ -232,6 +222,13 @@ int searchNeighborhoods(double x, double y, int *neighbords, struct Points *poin
         angle -= (angle > M_2PI ? M_2PI : 0);
 
         ppxd->angle = angle;
+      }
+      else
+      {
+        // TODO: 处理特殊情况，样本点与栅格像元中心点重合
+        // 目前做法是忽略该点
+        --alternativeNeighbordsCount;
+        continue;
       }
     }
   }
@@ -243,7 +240,7 @@ int searchNeighborhoods(double x, double y, int *neighbords, struct Points *poin
 
   for (int i = 0; i < alternativeNeighbordsCount; ++i)
   {
-    angleAscendingCache[i] = &distanceAngleToCentroidCache[i];
+    angleAscendingCache[i] = distanceAngleToCentroidCache + i;
   }
   qsort(angleAscendingCache, alternativeNeighbordsCount, sizeof(struct DistanceAngleToCentroid *), angleToCentroidCmp);
 
@@ -253,8 +250,7 @@ int searchNeighborhoods(double x, double y, int *neighbords, struct Points *poin
 
   // 迭代每一个扇区，然后将满足角度条件的点按距离由近及远排序。
   int neighbordsCount = 0;
-  int lastAngleEndIndex = 0;
-  for (int i = 0; i < sectorsWrap->count; ++i)
+  for (int i = 0, iLen = sectorsWrap->count; i < iLen; ++i)
   {
     struct NeighbordSector *sector = &sectorsWrap->sectors[i];
     double sectorAngleFrom = sector->angleFrom;
@@ -274,33 +270,22 @@ int searchNeighborhoods(double x, double y, int *neighbords, struct Points *poin
       }
     }
 
-    if (!sectorAlternativeNeighbordsCount)
+    if (sectorAlternativeNeighbordsCount)
     {
-      continue;
-    }
-
-    qsort(distanceAscendingCache, sectorAlternativeNeighbordsCount, sizeof(struct DistanceAngleToCentroid *), distanceToCentroidCmp);
-
-    for (int j = 0; j < sectorAlternativeNeighbordsCount; ++j)
-    {
-      struct DistanceAngleToCentroid *point = distanceAscendingCache[j];
-      if (sector->count < sector->maxPointCount)
+      qsort(distanceAscendingCache, sectorAlternativeNeighbordsCount, sizeof(struct DistanceAngleToCentroid *), distanceToCentroidCmp);
+      for (int j = 0; j < sectorAlternativeNeighbordsCount; ++j)
       {
-        neighbords[neighbordsCount++] = point->index;
-        ++sector->count;
+        struct DistanceAngleToCentroid *point = distanceAscendingCache[j];
+        if (sector->count < sector->maxPointCount)
+        {
+          neighbords[neighbordsCount++] = point->index;
+          ++sector->count;
+        }
+        else
+        {
+          break;
+        }
       }
-      else
-      {
-        break;
-      }
-    }
-
-    // 检查扇区角度范围内是否有样本点
-    // TODO: 已知样本点与中心点的角度范围为[0, 2PI)，扇区角度范围并不一定在[0, 2P])内，所以会存在问题
-    if (sectorAngleFrom > pointsMaxAngle || sectorAngleTo <= pointsMinAngle)
-    {
-      // 该扇区角度范围内没有样本点
-      continue;
     }
   }
   // TODO: 某个扇区的样本点数目不够的话将其丢弃？ ArcGIS的做法并没有将其丢弃
@@ -312,21 +297,14 @@ int angleToCentroidCmp(struct DistanceAngleToCentroid **a, struct DistanceAngleT
 {
   double angleA = (*a)->angle, angleB = (*b)->angle;
 
-  if (angleA < angleB)
-    return -1;
-  if (angleA > angleB)
-    return 1;
-  return 0;
+  return (angleA > angleB) - (angleA < angleB);
 }
 
 int distanceToCentroidCmp(struct DistanceAngleToCentroid **a, struct DistanceAngleToCentroid **b)
 {
   double distanceA = (*a)->distance, distanceB = (*b)->distance;
-  if (distanceA < distanceB)
-    return -1;
-  if (distanceA > distanceB)
-    return 1;
-  return 0;
+
+  return (distanceA > distanceB) - (distanceA < distanceB);
 }
 
 struct NeighbordSectorsWrap *makeSectors(struct NeighborhoodOption *neighborOpt)

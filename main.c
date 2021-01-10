@@ -95,7 +95,13 @@ int main(int argc, char **argv)
   struct Points krigingPoints = {samplePoints, samplePointNumbers};
   struct SemivariogramOption semivarOption = {lag, lagNumbers, variogramModel};
   struct NeighborhoodOption neighborOption = {sectorType, 2, 5, 480000};
-  ordinaryKriging(&krigingPoints, &semivarOption, &neighborOption, NULL);
+  struct RasterInfo rasterInfo = {
+      .top = 881249.623773591,
+      .left = 227892.999058652,
+      .resolution = 200,
+      .xsize = 2694,
+      .ysize = 4064};
+  ordinaryKriging(&krigingPoints, &semivarOption, &neighborOption, &rasterInfo);
 
   return 0;
 }
