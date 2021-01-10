@@ -11,6 +11,8 @@
         "${workspaceFolder}/main.c",
         "${workspaceFolder}/ordinary_kriging.c",
         "${workspaceFolder}/variogram.c",
+        "${workspaceFolder}/gaussian_jordan/gaussian.c",
+        "${workspaceFolder}/gaussian_jordan/mat_ops.c",
         "-o",
         "${workspaceFolder}/build/ordinary_kriging"
       ],

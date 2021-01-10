@@ -2,12 +2,19 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <float.h>
 #include "ordinary_kriging.h"
 #include "variogram.h"
 
 // #define DEBUG
+// #define BINNING_DEBUG
 
 double *readSamplePointFromFile(char *, int *);
+
+// 区间分组：用于计算适配模型的参数
+void binning(struct Points *points, double lag, int lagNumbers, int *lagsSemivarCount, double *lagsSemivarSum);
+// 在没有制定输出栅格参数时根据已有条件生成默认参数
+struct RasterInfo *deafultRasterFromPoints(struct Points *points);
 
 int main(int argc, char **argv)
 {
@@ -93,15 +100,28 @@ int main(int argc, char **argv)
 
   // ordinaryKriging(samplePoints, samplePointNumbers, variogramModel, lag, lagNumbers, minNeighbors, maxNeighbors, sectorType, rasterCellSize);
   struct Points krigingPoints = {samplePoints, samplePointNumbers};
-  struct SemivariogramOption semivarOption = {lag, lagNumbers, variogramModel};
+  struct VariogramModel variogramOpt = {.VAR = VARIOGRAM_MODEL_SPHERICAL,
+                                        .C0 = 7.179056886219061,
+                                        .CX = 7.179056886219061 + 70.42557944918185,
+                                        .A = 480000};
   struct NeighborhoodOption neighborOption = {sectorType, 2, 5, 480000};
   struct RasterInfo rasterInfo = {
       .top = 881249.623773591,
       .left = 227892.999058652,
       .resolution = 200,
-      .xsize = 2694,
-      .ysize = 4064};
-  ordinaryKriging(&krigingPoints, &semivarOption, &neighborOption, &rasterInfo);
+      .cols = 2694,
+      .rows = 4064,
+      .nodata = 0};
+
+  // 2. 根据需要生成半变异图参数：nugget(ArcGIS使用weighted least squares算法生成), sill, range等
+  //    根据需要生成lag & lagNumbers
+
+  // int lagsSemivarCount[pointNumbers];
+  // double lagsSemivarSum[pointNumbers];
+  // struct PointPairDistance pointPairDistance[(int)(pointNumbers * (pointNumbers - 1) / 2)]; // 点与点之间配对个数
+  // binning(points, semivarOpt, lagsSemivarCount, lagsSemivarSum, pointPairDistance);
+
+  ordinaryKriging(&krigingPoints, &variogramOpt, &neighborOption, &rasterInfo);
 
   return 0;
 }
@@ -212,4 +232,109 @@ double *readSamplePointFromFile(char *filePath, int *pointNumbers)
 
   *pointNumbers = validPointValueCount / 3;
   return validPoints;
+}
+
+void binning(struct Points *points,
+             const double lag,
+             const int lagNumbers,
+             int *lagsSemivarCount,
+             double *lagsSemivarSum)
+{
+  const double *pointsData = points->data;
+  const int pointNumbers = points->numbers;
+
+  for (int i = 0; i < lagNumbers; ++i)
+  {
+    // 初始化
+    lagsSemivarCount[i] = 0;
+    lagsSemivarSum[i] = 0;
+  }
+  for (int i = 0; i < pointNumbers; ++i)
+  {
+    const int ipIndex = i * 3;
+    double ipx = pointsData[ipIndex];
+    double ipy = pointsData[ipIndex + 1];
+    double ipv = pointsData[ipIndex + 2];
+    for (int j = i + 1; j < pointNumbers; ++j)
+    {
+      const int jpIndex = j * 3;
+      double jpx = pointsData[jpIndex];
+      double jpy = pointsData[jpIndex + 1];
+      double jpv = pointsData[jpIndex + 2];
+
+      const double ijDistance = sqrt(pow(ipx - jpx, 2) + pow(ipy - jpy, 2));
+      // 如果lagsSemivarIndex小于lagNumbers则表明距离在lag * lagNumbers以内。
+      const int lagsSemivarIndex = ijDistance / lag;
+      if (lagsSemivarIndex < lagNumbers)
+      {
+        const double semivariance = pow(ipv - jpv, 2) / 2;
+        ++lagsSemivarCount[lagsSemivarIndex];
+        lagsSemivarSum[lagsSemivarIndex] += semivariance;
+      }
+    }
+  }
+
+#ifdef BINNING_DEBUG
+  printf("x = [");
+  for (int i = 0; i < lagNumbers; ++i)
+  {
+    if (lagsSemivarCount[i])
+    {
+      printf("%d%s", (int)(lag * (i + 0.5)), i < lagNumbers - 1 ? ", " : "");
+    }
+  }
+  printf("]\n");
+
+  printf("y = [");
+  for (int i = 0; i < lagNumbers; ++i)
+  {
+    if (lagsSemivarCount[i])
+    {
+      printf("%f%s", lagsSemivarSum[i] / lagsSemivarCount[i], i < lagNumbers - 1 ? ", " : "");
+    }
+  }
+  printf("]\n");
+
+#endif
+}
+
+
+struct RasterInfo *deafultRasterFromPoints(struct Points *points)
+{
+  struct RasterInfo *info = malloc(sizeof(struct RasterInfo));
+
+  double minx = DBL_MAX, miny = DBL_MAX, maxx = DBL_MIN, maxy = DBL_MIN;
+  double *pointsData = points->data;
+  const int pointNumbers = points->numbers;
+  for (int i = 0; i < pointNumbers; ++i)
+  {
+    int ptIndex = 3 * i;
+    double x = pointsData[ptIndex];
+    double y = pointsData[ptIndex + 1];
+
+    if (x < minx)
+    {
+      minx = x;
+    }
+    if (x > maxx)
+    {
+      maxx = x;
+    }
+    if (y < miny)
+    {
+      miny = y;
+    }
+    if (y > maxy)
+    {
+      maxy = y;
+    }
+  }
+
+  info->top = maxy;
+  info->left = minx;
+  // 默认x方向像元数量为250个
+  info->cols = 250;
+  info->resolution = (int)((maxx - minx) / info->cols);
+  info->rows = (int)((maxy - miny) / info->resolution) + 1;
+  return info;
 }

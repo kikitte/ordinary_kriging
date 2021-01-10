@@ -1,3 +1,5 @@
+#include "variogram.h"
+
 #define SECTOR_TYPE_1 5
 #define SECTOR_TYPE_4S 6
 // arcgis: 4 sectors with 45 degrees offset
@@ -54,16 +56,10 @@ struct RasterInfo
 {
   double top;
   double left;
-  int xsize;
-  int ysize;
+  int cols;
+  int rows;
   double resolution;
-};
-
-struct SemivariogramOption
-{
-  double lag;
-  double lagNumbers;
-  int modelType;
+  const double nodata;
 };
 
 struct NeighborhoodOption
@@ -75,6 +71,6 @@ struct NeighborhoodOption
 };
 
 double *ordinaryKriging(struct Points *points,
-                        struct SemivariogramOption *semivarOpt,
+                        struct VariogramModel *semivarOpt,
                         struct NeighborhoodOption *neighborOpt,
                         struct RasterInfo *rasterInfo);

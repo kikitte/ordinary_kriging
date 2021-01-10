@@ -5,16 +5,13 @@
 #include "ordinary_kriging.h"
 #include "variogram.h"
 #include "constants.h"
+#include "gaussian_jordan/gaussian.h"
+#include "gaussian_jordan/mat_ops.h"
 
-// #define BINNING_DEBUG
 #define MAKE_SECTORS_DEBUG
 
-// 在没有制定输出栅格参数时根据已有条件生成默认参数
-struct RasterInfo *deafultRasterFromPoints(struct Points *points);
 // 根据扇区类型搜索用于克里金插值的点
-int searchNeighborhoods(double x, double y, int *neighbords, struct Points *points, struct NeighborhoodOption *neighborOpt, struct NeighbordSectorsWrap *sectorsWrap, struct DistanceAngleToCentroid *distanceAngleToCentroidCache);
-// 区间分组：用于计算适配模型的参数
-void binning(struct Points *points, struct SemivariogramOption *semivarOpt, int *lagsSemivarCount, double *lagsSemivarSum, struct PointPairDistance *pointPairDistance);
+int searchNeighborhoods(double cellX, double cellY, int *neighbords, double *neighbordsDistance, struct Points *points, struct NeighborhoodOption *neighborOpt, struct NeighbordSectorsWrap *sectorsWrap, struct DistanceAngleToCentroid *distanceAngleToCentroidCache);
 // 在qsort函数里边用于比较两个PointPixelDistance结构体数组角度的函数
 int angleToCentroidCmp(struct DistanceAngleToCentroid **a, struct DistanceAngleToCentroid **b);
 // 在qsort函数里边用于比较两个PointPixelDistance结构体数组距离的函数
@@ -25,174 +22,119 @@ struct NeighbordSectorsWrap *makeSectors(struct NeighborhoodOption *neighborOpt)
 // struct PointPixelDistance **pointPixelDistance = NULL;
 
 double *ordinaryKriging(struct Points *points,
-                        struct SemivariogramOption *semivarOpt,
+                        struct VariogramModel *variogramOpt,
                         struct NeighborhoodOption *neighborOpt,
                         struct RasterInfo *rasterInfo)
 {
-  // 默认生成的RasterInfo结构体通过动态请求内存, 所以后面需要释放
-  int isDefaultRasterInfo = 0;
-  if (rasterInfo == NULL)
+  // 获取半变异函数和参数
+  double (*modelFnc)(double H, double C0, double CX, double A) = NULL;
+  switch (variogramOpt->VAR)
   {
-    isDefaultRasterInfo = 1;
-    rasterInfo = deafultRasterFromPoints(points);
+  case VARIOGRAM_MODEL_LINEAR:
+    return NULL;
+  case VARIOGRAM_MODEL_SPHERICAL:
+    modelFnc = sphericalVariogram;
+    break;
+  case VARIOGRAM_MODEL_EXPONENTIAL:
+    modelFnc = exponentialVariogram;
+    break;
+  case VARIOGRAM_MODEL_GAUSSIAN:
+    modelFnc = gaussianVariogram;
+    break;
+  default:
+    return NULL;
   }
 
-  // 1. 区间分组，忽略数据的各项异性。
-  const int pointNumbers = points->numbers;
-  int lagsSemivarCount[pointNumbers];
-  double lagsSemivarSum[pointNumbers];
-  struct PointPairDistance pointPairDistance[(int)(pointNumbers * (pointNumbers - 1) / 2)]; // 点与点之间配对个数
-  binning(points, semivarOpt, lagsSemivarCount, lagsSemivarSum, pointPairDistance);
-
-  // 2. 根据需要生成半变异图参数：nugget(ArcGIS使用weighted least squares算法生成), sill, range等
-  //    根据需要生成lag & lagNumbers
-
   // 2. 计算扇区参数
-  struct DistanceAngleToCentroid *distanceAngleToCentroidCache = malloc(sizeof(struct DistanceAngleToCentroid) * pointNumbers);
+  struct DistanceAngleToCentroid *distanceAngleToCentroidCache = malloc(sizeof(struct DistanceAngleToCentroid) * points->numbers);
   struct NeighbordSectorsWrap *sectorsWrap = makeSectors(neighborOpt);
 
   // 3. 栅格点插值
-  int *neightbors = malloc(sizeof(int) * pointNumbers);
-  double *rasterArray_ = malloc(sizeof(double) * rasterInfo->xsize * rasterInfo->ysize); // 栅格以行存储
-  double *rasterArray = rasterArray_;
+  int *neightbors = malloc(sizeof(int) * points->numbers);
+  double *neightborsDistance = malloc(sizeof(double) * points->numbers);
+  double(*rasterArray)[rasterInfo->cols] = malloc(sizeof(double) * rasterInfo->cols * rasterInfo->rows); // 栅格以行存储
 
-  for (int x = 0; x < rasterInfo->xsize; ++x)
+  for (int r = 0; r < rasterInfo->rows; ++r)
   {
-    double ptx = rasterInfo->left + rasterInfo->resolution * (x + 0.5);
-    for (int y = 0; y < rasterInfo->ysize; ++y)
+    double cellY = rasterInfo->top - rasterInfo->resolution * (r + 0.5);
+    for (int c = 0; c < rasterInfo->cols; ++c)
     {
-      double pty = rasterInfo->top - rasterInfo->resolution * (y + 0.5);
+      double cellX = rasterInfo->left + rasterInfo->resolution * (c + 0.5);
       // 搜索用于插值的临近样本点
-      int neighordsCount = searchNeighborhoods(ptx, pty, neightbors, points, neighborOpt, sectorsWrap, distanceAngleToCentroidCache);
+      int neighordsCount = searchNeighborhoods(cellX, cellY, neightbors, neightborsDistance, points, neighborOpt, sectorsWrap, distanceAngleToCentroidCache);
       if (neighordsCount)
       {
-        // TODO: 获取到临近点之后进行更进一步的计算
+        printf("%d\n", neighordsCount);
+        continue;
+
+        int pointBaseIndex = 0;
+        // AX = B, 求A的逆矩阵
+        double *neighbordValues = malloc(sizeof(double) * neighordsCount);
+        double **A = mat_zeros(neighordsCount, neighordsCount);
+        double **B = mat_zeros(neighordsCount, 1);
+
+        for (int rr = 0; rr < neighordsCount; ++rr)
+        {
+          A[rr][rr] = 0;
+          A[rr][neighordsCount - 1] = 1;
+          B[rr][0] = modelFnc(neightborsDistance[rr], variogramOpt->C0, variogramOpt->CX, variogramOpt->A);
+
+          pointBaseIndex = neightbors[rr] * 3;
+          double nx = points->data[pointBaseIndex], ny = points->data[++pointBaseIndex];
+          neighbordValues[rr] = points->data[++pointBaseIndex];
+
+          for (int cc = rr + 1; cc < neighordsCount; ++cc)
+          {
+            pointBaseIndex = neightbors[cc] * 3;
+            double mx = points->data[pointBaseIndex], my = points->data[++pointBaseIndex];
+            double mnx = mx - nx, mny = my - ny;
+            double distance = sqrt(mnx * mnx + mny * mny);
+
+            A[rr][cc] = modelFnc(distance, variogramOpt->C0, variogramOpt->CX, variogramOpt->A);
+          }
+        }
+
+        // 将矩阵的右上部分复制到左下部分
+        for (int rr = 0; rr < neighordsCount; ++rr)
+        {
+          for (int cc = rr + 1; cc < neighordsCount; ++cc)
+          {
+            A[cc][rr] = A[rr][cc];
+          }
+        }
+
+        // 求解逆矩阵
+        double **invA = inv(neighordsCount, A);
+        double **W = mat_mul(neighordsCount, neighordsCount, 1, invA, B);
+        double cellValue = 0;
+        for (int i = 0; i < neighordsCount; ++i)
+        {
+          cellValue += W[i][0] * neighbordValues[i];
+        }
+
+        printf("%f", cellValue);
+
+        free(neighbordValues);
+        free_ptr(neighordsCount, A);
+        free_ptr(neighordsCount, B);
+        free_ptr(neighordsCount, W);
+        free_ptr(neighordsCount, invA);
+      }
+      else
+      {
+        rasterArray[r][c] = rasterInfo->nodata;
       }
     }
   }
 
-  free(rasterArray_);
   free(distanceAngleToCentroidCache);
   free(sectorsWrap->sectors);
   free(sectorsWrap);
-  if (isDefaultRasterInfo)
-  {
-    free(rasterInfo);
-  }
-  return NULL;
+
+  return rasterArray;
 }
 
-void binning(struct Points *points,
-             struct SemivariogramOption *semivarOpt,
-             int *lagsSemivarCount,
-             double *lagsSemivarSum,
-             struct PointPairDistance *pointPairDistance)
-{
-  const double *pointsData = points->data;
-  const int pointNumbers = points->numbers;
-  const double lag = semivarOpt->lag;
-  const int lagNumbers = semivarOpt->lagNumbers;
-
-  for (int i = 0; i < lagNumbers; ++i)
-  {
-    // 初始化
-    lagsSemivarCount[i] = 0;
-    lagsSemivarSum[i] = 0;
-  }
-  for (int i = 0; i < pointNumbers; ++i)
-  {
-    const int ipIndex = i * 3;
-    double ipx = pointsData[ipIndex];
-    double ipy = pointsData[ipIndex + 1];
-    double ipv = pointsData[ipIndex + 2];
-    for (int j = i + 1; j < pointNumbers; ++j)
-    {
-      const int jpIndex = j * 3;
-      double jpx = pointsData[jpIndex];
-      double jpy = pointsData[jpIndex + 1];
-      double jpv = pointsData[jpIndex + 2];
-
-      const double ijDistance = sqrt(pow(ipx - jpx, 2) + pow(ipy - jpy, 2));
-      struct PointPairDistance *pointPair = pointPairDistance++;
-      pointPair->fromIndex = i;
-      pointPair->toIndex = j;
-      pointPair->distance = ijDistance;
-      // 如果lagsSemivarIndex小于lagNumbers则表明距离在lag * lagNumbers以内。
-      const int lagsSemivarIndex = ijDistance / lag;
-      if (lagsSemivarIndex < lagNumbers)
-      {
-        const double semivariance = pow(ipv - jpv, 2) / 2;
-        ++lagsSemivarCount[lagsSemivarIndex];
-        lagsSemivarSum[lagsSemivarIndex] += semivariance;
-      }
-    }
-  }
-
-#ifdef BINNING_DEBUG
-  printf("x = [");
-  for (int i = 0; i < lagNumbers; ++i)
-  {
-    if (lagsSemivarCount[i])
-    {
-      printf("%d%s", (int)(lag * (i + 0.5)), i < lagNumbers - 1 ? ", " : "");
-    }
-  }
-  printf("]\n");
-
-  printf("y = [");
-  for (int i = 0; i < lagNumbers; ++i)
-  {
-    if (lagsSemivarCount[i])
-    {
-      printf("%f%s", lagsSemivarSum[i] / lagsSemivarCount[i], i < lagNumbers - 1 ? ", " : "");
-    }
-  }
-  printf("]\n");
-
-#endif
-}
-
-struct RasterInfo *deafultRasterFromPoints(struct Points *points)
-{
-  struct RasterInfo *info = malloc(sizeof(struct RasterInfo));
-
-  double minx = DBL_MAX, miny = DBL_MAX, maxx = DBL_MIN, maxy = DBL_MIN;
-  double *pointsData = points->data;
-  const int pointNumbers = points->numbers;
-  for (int i = 0; i < pointNumbers; ++i)
-  {
-    int ptIndex = 3 * i;
-    double x = pointsData[ptIndex];
-    double y = pointsData[ptIndex + 1];
-
-    if (x < minx)
-    {
-      minx = x;
-    }
-    if (x > maxx)
-    {
-      maxx = x;
-    }
-    if (y < miny)
-    {
-      miny = y;
-    }
-    if (y > maxy)
-    {
-      maxy = y;
-    }
-  }
-
-  info->top = maxy;
-  info->left = minx;
-  // 默认x方向像元数量为250个
-  info->xsize = 250;
-  info->resolution = (int)((maxx - minx) / info->xsize);
-  info->ysize = (int)((maxy - miny) / info->resolution) + 1;
-  return info;
-}
-
-int searchNeighborhoods(double x, double y, int *neighbords, struct Points *points, struct NeighborhoodOption *neighborOpt, struct NeighbordSectorsWrap *sectorsWrap, struct DistanceAngleToCentroid *distanceAngleToCentroidCache)
+int searchNeighborhoods(double cellX, double cellY, int *neighbords, double *neighbordsDistance, struct Points *points, struct NeighborhoodOption *neighborOpt, struct NeighbordSectorsWrap *sectorsWrap, struct DistanceAngleToCentroid *distanceAngleToCentroidCache)
 {
   double *pointsData = points->data;
   const int pointsNumber = points->numbers;
@@ -206,7 +148,7 @@ int searchNeighborhoods(double x, double y, int *neighbords, struct Points *poin
   for (int i = 0; i < pointsNumber; ++i, ++pointsData)
   {
     // 样本点相对于像元中心点的坐标
-    double pointX = *pointsData++ - x, pointY = *pointsData++ - y;
+    double pointX = *pointsData++ - cellX, pointY = *pointsData++ - cellY;
     double distance = sqrt(pointX * pointX + pointY * pointY);
     if (distance < maxDistance)
     {
@@ -278,7 +220,9 @@ int searchNeighborhoods(double x, double y, int *neighbords, struct Points *poin
         struct DistanceAngleToCentroid *point = distanceAscendingCache[j];
         if (sector->count < sector->maxPointCount)
         {
-          neighbords[neighbordsCount++] = point->index;
+          neighbords[neighbordsCount] = point->index;
+          neighbordsDistance[neighbordsCount] = point->distance;
+          ++neighbordsCount;
           ++sector->count;
         }
         else

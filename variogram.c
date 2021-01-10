@@ -4,7 +4,6 @@
 // Purpose: Multiple semivariogram models for Kriging Implementation
 // https://github.com/CNCA-CeNAT/kriging/blob/master/src/Variogram.h
 
-
 #ifndef VARIOGRAM_H
 #define VARIOGRAM_H
 
@@ -14,8 +13,6 @@
 #include <stdlib.h>
 #include <math.h>
 #include "variogram.h"
-
-
 
 /**
  * @brief Spherical Semivariogram Model based on http://spatial-analyst.net/ILWIS/htm/ilwisapp/sec/semivar_models_sec.htm

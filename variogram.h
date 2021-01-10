@@ -21,4 +21,6 @@ double waveVariogram(double H, double C0, double CX, double A);
 double rationalQuadraticVariogram(double H, double C0, double CX, double A);
 double circularVariogram(double H, double C0, double CX, double A);
 
+void *chooseModelFncForType(int type);
+
 #endif
