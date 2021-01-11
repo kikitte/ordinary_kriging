@@ -124,9 +124,9 @@ double** mat_add(int m, int n, double** mat1, double** mat2)
 void print_mat(int r, int c, double** mat){
     for(int i=0; i<r; i++){
         for(int j=0; j<c; j++){
-            printf("%f  ",  mat[i][j]);
+            printf("%f%c",  mat[i][j], j == c-1 ? ' ' : ',');
         }
-        printf("\n");
+        printf(";");
     }
 }
 

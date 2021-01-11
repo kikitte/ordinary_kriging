@@ -30,7 +30,7 @@ double sphericalVariogram(double H, double C0, double CX, double A)
 	}
 	else
 	{
-		return C0 + ((CX - C0) * ((3 * H) / (2 * A)) - (H * H * H) / (2 * A * A * A));
+		return C0 + (CX - C0) * (((3 * H) / (2 * A)) - (H * H * H) / (2 * A * A * A));
 	}
 }
 
@@ -44,7 +44,7 @@ double sphericalVariogram(double H, double C0, double CX, double A)
  */
 double exponentialVariogram(double H, double C0, double CX, double A)
 {
-	return C0 + ((CX - C0) * (1 - exp((-H / A))));
+	return C0 + (CX - C0) * (1 - exp(-H / A));
 }
 
 /**
@@ -59,7 +59,7 @@ double gaussianVariogram(double H, double C0, double CX, double A)
 {
 	double e = (H / A);
 	e = e * e;
-	return C0 + ((CX - C0) * (1 - exp(-e)));
+	return C0 + (CX - C0) * (1 - exp(-e));
 }
 
 /**
@@ -73,7 +73,7 @@ double gaussianVariogram(double H, double C0, double CX, double A)
 double waveVariogram(double H, double C0, double CX, double A)
 {
 	double e = H / A;
-	return C0 + ((CX - C0) * (1 - (sin(e) / e)));
+	return C0 + (CX - C0) * (1 - (sin(e) / e));
 }
 
 /**
@@ -87,7 +87,7 @@ double waveVariogram(double H, double C0, double CX, double A)
 double rationalQuadraticVariogram(double H, double C0, double CX, double A)
 {
 	double e = (H * H) / (A * A);
-	return C0 + ((CX - C0) * (e / (1 + e)));
+	return C0 + (CX - C0) * (e / (1 + e));
 }
 
 /**
@@ -109,7 +109,7 @@ double circularVariogram(double H, double C0, double CX, double A)
 		double e = H / A;
 		double p = 2 / M_PI;
 		double r = sqrt(1 - e * e);
-		return C0 + ((CX - C0) * (1 - p * acos(e) + p * e * r));
+		return C0 + (CX - C0) * (1 - p * acos(e) + p * e * r);
 	}
 }
 #endif

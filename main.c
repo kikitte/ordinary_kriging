@@ -3,8 +3,24 @@
 #include <string.h>
 #include <math.h>
 #include <float.h>
+#include <gdal.h>
+#include <cpl_conv.h>
 #include "ordinary_kriging.h"
 #include "variogram.h"
+
+void saveRaster(struct RasterInfo rastParam, void *arr, const char *name)
+{
+  GDALDriverH hTiff = GDALGetDriverByName("GTiff");
+  GDALDatasetH ds = GDALCreate(hTiff, name, rastParam.cols, rastParam.rows, 1,
+                               GDT_Float64, NULL);
+  double geoTransform[] = {rastParam.left, rastParam.resolution, 0,
+                           rastParam.top, 0, -rastParam.resolution};
+  GDALSetGeoTransform(ds, geoTransform);
+  GDALRasterIO(GDALGetRasterBand(ds, 1), GF_Write, 0, 0, rastParam.cols,
+               rastParam.rows, arr, rastParam.cols,
+               rastParam.rows, GDT_Float64, 0, 0);
+  GDALClose(ds);
+}
 
 // #define DEBUG
 // #define BINNING_DEBUG
@@ -100,11 +116,16 @@ int main(int argc, char **argv)
 
   // ordinaryKriging(samplePoints, samplePointNumbers, variogramModel, lag, lagNumbers, minNeighbors, maxNeighbors, sectorType, rasterCellSize);
   struct Points krigingPoints = {samplePoints, samplePointNumbers};
-  struct VariogramModel variogramOpt = {.VAR = VARIOGRAM_MODEL_SPHERICAL,
-                                        .C0 = 7.179056886219061,
-                                        .CX = 7.179056886219061 + 70.42557944918185,
-                                        .A = 480000};
-  struct NeighborhoodOption neighborOption = {sectorType, 2, 5, 480000};
+  struct VariogramModel variogramOpt = {
+      .VAR = VARIOGRAM_MODEL_SPHERICAL,
+      .C0 = 7.179056886219,
+      .CX = 7.179056886219 + 70.425579449182,
+      .A = 480000};
+  struct NeighborhoodOption neighborOption = {
+      .sectorType = sectorType,
+      .minNeighbords = 2,
+      .maxNeighbords = 5,
+      .maxDistance = 480000};
   struct RasterInfo rasterInfo = {
       .top = 881249.623773591,
       .left = 227892.999058652,
@@ -121,7 +142,11 @@ int main(int argc, char **argv)
   // struct PointPairDistance pointPairDistance[(int)(pointNumbers * (pointNumbers - 1) / 2)]; // 点与点之间配对个数
   // binning(points, semivarOpt, lagsSemivarCount, lagsSemivarSum, pointPairDistance);
 
-  ordinaryKriging(&krigingPoints, &variogramOpt, &neighborOption, &rasterInfo);
+  double(*rasterArr)[rasterInfo.cols] = ordinaryKriging(&krigingPoints, &variogramOpt, &neighborOption, &rasterInfo);
+
+  // 写出栅格
+  GDALAllRegister();
+  saveRaster(rasterInfo, rasterArr, "/home/kikitte/geoanalyst/kriging/debug/out.tif");
 
   return 0;
 }
@@ -297,7 +322,6 @@ void binning(struct Points *points,
 
 #endif
 }
-
 
 struct RasterInfo *deafultRasterFromPoints(struct Points *points)
 {

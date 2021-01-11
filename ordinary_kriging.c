@@ -8,7 +8,7 @@
 #include "gaussian_jordan/gaussian.h"
 #include "gaussian_jordan/mat_ops.h"
 
-#define MAKE_SECTORS_DEBUG
+// #define MAKE_SECTORS_DEBUG
 
 // 根据扇区类型搜索用于克里金插值的点
 int searchNeighborhoods(double cellX, double cellY, int *neighbords, double *neighbordsDistance, struct Points *points, struct NeighborhoodOption *neighborOpt, struct NeighbordSectorsWrap *sectorsWrap, struct DistanceAngleToCentroid *distanceAngleToCentroidCache);
@@ -52,7 +52,8 @@ double *ordinaryKriging(struct Points *points,
   // 3. 栅格点插值
   int *neightbors = malloc(sizeof(int) * points->numbers);
   double *neightborsDistance = malloc(sizeof(double) * points->numbers);
-  double(*rasterArray)[rasterInfo->cols] = malloc(sizeof(double) * rasterInfo->cols * rasterInfo->rows); // 栅格以行存储
+  double *rasterArray_ = malloc(sizeof(double) * rasterInfo->cols * rasterInfo->rows); // 栅格以行存储
+  double *rasterArray = rasterArray_;
 
   for (int r = 0; r < rasterInfo->rows; ++r)
   {
@@ -64,24 +65,27 @@ double *ordinaryKriging(struct Points *points,
       int neighordsCount = searchNeighborhoods(cellX, cellY, neightbors, neightborsDistance, points, neighborOpt, sectorsWrap, distanceAngleToCentroidCache);
       if (neighordsCount)
       {
-        printf("%d\n", neighordsCount);
-        continue;
+        int dimen = neighordsCount + 1;
 
         int pointBaseIndex = 0;
         // AX = B, 求A的逆矩阵
         double *neighbordValues = malloc(sizeof(double) * neighordsCount);
-        double **A = mat_zeros(neighordsCount, neighordsCount);
-        double **B = mat_zeros(neighordsCount, 1);
+        double **A = mat_zeros(dimen, dimen);
+        double **B = mat_zeros(dimen, 1);
 
-        for (int rr = 0; rr < neighordsCount; ++rr)
+        for (int rr = 0; rr < dimen; ++rr)
         {
+          A[rr][neighordsCount] = 1;
           A[rr][rr] = 0;
-          A[rr][neighordsCount - 1] = 1;
-          B[rr][0] = modelFnc(neightborsDistance[rr], variogramOpt->C0, variogramOpt->CX, variogramOpt->A);
+          B[rr][0] = rr < neighordsCount ? modelFnc(neightborsDistance[rr], variogramOpt->C0, variogramOpt->CX, variogramOpt->A) : 1;
 
-          pointBaseIndex = neightbors[rr] * 3;
-          double nx = points->data[pointBaseIndex], ny = points->data[++pointBaseIndex];
-          neighbordValues[rr] = points->data[++pointBaseIndex];
+          double nx, ny;
+          if (rr < neighordsCount)
+          {
+            pointBaseIndex = neightbors[rr] * 3;
+            nx = points->data[pointBaseIndex], ny = points->data[++pointBaseIndex];
+            neighbordValues[rr] = points->data[++pointBaseIndex];
+          }
 
           for (int cc = rr + 1; cc < neighordsCount; ++cc)
           {
@@ -95,35 +99,42 @@ double *ordinaryKriging(struct Points *points,
         }
 
         // 将矩阵的右上部分复制到左下部分
-        for (int rr = 0; rr < neighordsCount; ++rr)
+        for (int rr = 0; rr < dimen; ++rr)
         {
-          for (int cc = rr + 1; cc < neighordsCount; ++cc)
+          for (int cc = rr + 1; cc < dimen; ++cc)
           {
             A[cc][rr] = A[rr][cc];
           }
         }
 
         // 求解逆矩阵
-        double **invA = inv(neighordsCount, A);
-        double **W = mat_mul(neighordsCount, neighordsCount, 1, invA, B);
+        double **invA = inv(dimen, A);
+        double **W = mat_mul(dimen, dimen, 1, invA, B);
         double cellValue = 0;
         for (int i = 0; i < neighordsCount; ++i)
         {
           cellValue += W[i][0] * neighbordValues[i];
         }
+        *rasterArray++ = cellValue;
 
-        printf("%f", cellValue);
+        printf("%f\n", cellValue);
 
         free(neighbordValues);
-        free_ptr(neighordsCount, A);
-        free_ptr(neighordsCount, B);
-        free_ptr(neighordsCount, W);
-        free_ptr(neighordsCount, invA);
+        free_ptr(dimen, A);
+        free_ptr(dimen, B);
+        free_ptr(dimen, W);
+        free_ptr(dimen, invA);
       }
       else
       {
-        rasterArray[r][c] = rasterInfo->nodata;
+        *rasterArray++ = rasterInfo->nodata;
       }
+      // 重置sectors计数
+      for (int i = 0, iLen = sectorsWrap->count; i < iLen; ++i)
+      {
+        sectorsWrap->sectors[i].count = 0;
+      }
+
     }
   }
 
@@ -131,7 +142,7 @@ double *ordinaryKriging(struct Points *points,
   free(sectorsWrap->sectors);
   free(sectorsWrap);
 
-  return rasterArray;
+  return rasterArray_;
 }
 
 int searchNeighborhoods(double cellX, double cellY, int *neighbords, double *neighbordsDistance, struct Points *points, struct NeighborhoodOption *neighborOpt, struct NeighbordSectorsWrap *sectorsWrap, struct DistanceAngleToCentroid *distanceAngleToCentroidCache)
@@ -150,6 +161,8 @@ int searchNeighborhoods(double cellX, double cellY, int *neighbords, double *nei
     // 样本点相对于像元中心点的坐标
     double pointX = *pointsData++ - cellX, pointY = *pointsData++ - cellY;
     double distance = sqrt(pointX * pointX + pointY * pointY);
+    // Note: ArcGIS好像超出范围了也要搜索如果扇区里点数不够的话
+    // 这里不采用这种策略
     if (distance < maxDistance)
     {
       struct DistanceAngleToCentroid *ppxd = &distanceAngleToCentroidCache[alternativeNeighbordsCount++];

@@ -8,6 +8,7 @@
         "-O2",
         "-g",
         "-lm",
+        "-lgdal",
         "${workspaceFolder}/main.c",
         "${workspaceFolder}/ordinary_kriging.c",
         "${workspaceFolder}/variogram.c",
