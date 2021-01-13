@@ -3,6 +3,19 @@
     "bitset": "c",
     "cstdlib": "c",
     "algorithm": "c",
-    "functional": "c"
+    "functional": "c",
+    "*.tcc": "c",
+    "*.ipp": "c",
+    "hash_map": "c",
+    "hash_set": "c",
+    "bit": "c",
+    "chrono": "c",
+    "condition_variable": "c",
+    "istream": "c",
+    "limits": "c",
+    "mutex": "c",
+    "ranges": "c",
+    "streambuf": "c",
+    "thread": "c"
   }
 }

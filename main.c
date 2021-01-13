@@ -146,7 +146,9 @@ int main(int argc, char **argv)
 
   // 写出栅格
   GDALAllRegister();
-  saveRaster(rasterInfo, rasterArr, "/home/kikitte/geoanalyst/kriging/debug/out.tif");
+  saveRaster(rasterInfo, rasterArr, "/home/kikitte/geoanalyst/kriging/debug/out2.tif");
+
+  free(rasterArr);
 
   return 0;
 }

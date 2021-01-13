@@ -3,13 +3,15 @@
 
 /**
  * 使用高斯消元法求解线性方程组Ax=B
- * 将求解结果写入x数组
+ * A为增广矩阵（包含系数矩阵与等号右边的结果）
+ * 将求解结果写入b数组
  * @param N 方阵阶数
- * @param mat N阶方阵
+ * @param A N X (N+1)阶方阵
+ * @param x 结果输出
  * @param Tol small tolerance number to detect failure when the matrix is near degenerate
  * @return 真值：方程有唯一解 假值：方程无解或解不为一
  */
-int gaussian_elimination_solve(int N, double **A, double *b, double *x, double Tol)
+int gaussian_elimination_solve(const int N, double **A, double *x, double Tol)
 {
   int i, j, k, imax;
   double maxA, absA, f, *ptr;
@@ -44,7 +46,7 @@ int gaussian_elimination_solve(int N, double **A, double *b, double *x, double T
       f = A[j][i] / A[i][i];
       A[j][i] = 0;
 
-      for (k = i + 1; k < N; ++k)
+      for (k = i + 1; k < N + 1; ++k)
         A[j][k] -= f * A[i][k];
     }
   }
@@ -52,11 +54,11 @@ int gaussian_elimination_solve(int N, double **A, double *b, double *x, double T
   // back substitution
   for (j = N - 1; j >= 0; --j)
   {
-    x[j] = b[j];
+    x[j] = A[j][N];
     for (i = j + 1; i < N; i++)
       x[j] -= A[j][i] * x[i];
 
-    x[i] /= A[i][i];
+    x[j] /= A[j][j];
   }
 
   return 1;

@@ -20,19 +20,18 @@ struct PointsIndex
 };
 
 // 记录扇区的id及其包含的临近点数量
-struct NeighbordSector
+struct Sector
 {
   int id;
-  int count;
   int minPointCount; // 扇区内容许的最大样本点数量(includsive)
   int maxPointCount; // 扇区内容许的最小样本点数量(includsive)
   double angleFrom;  // 起始角度(includsive: 如果样本点角度等于起始角度则将该点纳入扇区)
   double angleTo;    // 终止角度(excludsive: 如果样本点角度等于终止角度则不将该点纳入扇区)
 };
 
-struct NeighbordSectorsWrap
+struct SectorsWrap
 {
-  struct NeighbordSector *sectors;
+  struct Sector *sectors;
   int count;
 };
 
@@ -45,7 +44,7 @@ struct PointPairDistance
 };
 
 // 记录像元中心点和插值样本点的距离与角度（连线与网格北方向的夹角）
-struct DistanceAngleToCentroid
+struct DistanceAngle
 {
   int index;
   double distance;
