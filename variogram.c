@@ -11,7 +11,7 @@
 
 //Standard and Math
 #include <stdlib.h>
-#include <math.h>
+#include "constants.h"
 #include "variogram.h"
 
 /**

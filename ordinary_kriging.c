@@ -5,8 +5,8 @@
 #include "ordinary_kriging.h"
 #include "variogram.h"
 #include "constants.h"
-#include "gaussian_jordan/gaussian.h"
-#include "gaussian_jordan/mat_ops.h"
+#include "math/gaussian.h"
+#include "math/mat_ops.h"
 
 // #define MAKE_SECTORS_DEBUG
 
@@ -49,11 +49,22 @@ double *ordinaryKriging(struct Points *points,
   struct DistanceAngleToCentroid *distanceAngleToCentroidCache = malloc(sizeof(struct DistanceAngleToCentroid) * points->numbers);
   struct NeighbordSectorsWrap *sectorsWrap = makeSectors(neighborOpt);
 
+  if (NULL == sectorsWrap)
+  {
+    return NULL;
+  }
+
   // 3. 栅格点插值
   int *neightbors = malloc(sizeof(int) * points->numbers);
   double *neightborsDistance = malloc(sizeof(double) * points->numbers);
   double *rasterArray_ = malloc(sizeof(double) * rasterInfo->cols * rasterInfo->rows); // 栅格以行存储
   double *rasterArray = rasterArray_;
+
+  // 提前分配用于矩阵计算的一些内存
+  int maxDimen = 1 + sectorsWrap->count * sectorsWrap->sectors[0].maxPointCount;
+  double **A = mat_zeros(maxDimen, maxDimen);
+  double **B = mat_zeros(maxDimen, 1);
+  double **W = mat_zeros(maxDimen, 1);
 
   for (int r = 0; r < rasterInfo->rows; ++r)
   {
@@ -66,12 +77,7 @@ double *ordinaryKriging(struct Points *points,
       if (neighordsCount)
       {
         int dimen = neighordsCount + 1;
-
         int pointBaseIndex = 0;
-        // AX = B, 求A的逆矩阵
-        double *neighbordValues = malloc(sizeof(double) * neighordsCount);
-        double **A = mat_zeros(dimen, dimen);
-        double **B = mat_zeros(dimen, 1);
 
         for (int rr = 0; rr < dimen; ++rr)
         {
@@ -84,7 +90,7 @@ double *ordinaryKriging(struct Points *points,
           {
             pointBaseIndex = neightbors[rr] * 3;
             nx = points->data[pointBaseIndex], ny = points->data[++pointBaseIndex];
-            neighbordValues[rr] = points->data[++pointBaseIndex];
+            B[rr] = points->data[++pointBaseIndex];
           }
 
           for (int cc = rr + 1; cc < neighordsCount; ++cc)
@@ -108,21 +114,16 @@ double *ordinaryKriging(struct Points *points,
         }
 
         // 求解逆矩阵
-        double **invA = inv(dimen, A);
-        double **W = mat_mul(dimen, dimen, 1, invA, B);
         double cellValue = 0;
         for (int i = 0; i < neighordsCount; ++i)
         {
-          cellValue += W[i][0] * neighbordValues[i];
+          cellValue += W[i][0] * B[i];
         }
         *rasterArray++ = cellValue;
 
         printf("%f\n", cellValue);
 
         free(neighbordValues);
-        free_ptr(dimen, A);
-        free_ptr(dimen, B);
-        free_ptr(dimen, W);
         free_ptr(dimen, invA);
       }
       else
@@ -134,10 +135,12 @@ double *ordinaryKriging(struct Points *points,
       {
         sectorsWrap->sectors[i].count = 0;
       }
-
     }
   }
 
+  free_ptr(maxDimen, A);
+  free_ptr(maxDimen, B);
+  free_ptr(maxDimen, W);
   free(distanceAngleToCentroidCache);
   free(sectorsWrap->sectors);
   free(sectorsWrap);
@@ -284,6 +287,8 @@ struct NeighbordSectorsWrap *makeSectors(struct NeighborhoodOption *neighborOpt)
   case SECTOR_TYPE_8:
     sectorsCount = 8;
     break;
+  default:
+    return NULL;
   }
 
   struct NeighbordSector *sectors = malloc(sizeof(struct NeighbordSector) * sectorsCount);
