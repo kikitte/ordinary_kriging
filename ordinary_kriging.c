@@ -12,8 +12,6 @@
 
 // 根据扇区类型搜索用于克里金插值的点
 int searchNeighborhoods(double cellX, double cellY, int *neighbords, double *neighbordsDistance, struct Points *points, struct NeighborhoodOption *neighborOpt, struct SectorsWrap *sectorsWrap, struct DistanceAngle *distanceAngleCache, struct DistanceAngle **distanceAnglePointerCache);
-// 在qsort函数里边用于比较两个PointPixelDistance结构体数组距离的函数
-int distanceToCentroidCmp(const void *a, const void *b);
 // 根据临近点搜索条件生成sectors
 struct SectorsWrap *makeSectors(struct NeighborhoodOption *neighborOpt);
 
@@ -189,34 +187,34 @@ int searchNeighborhoods(double cellX, double cellY, int *neighbords, double *nei
     if (sectorAlternativeNeighbordsCount)
     {
       // 满足条件的样本点的计数
-      int count = 0, maxCount = sector->maxPointCount;
+      int maxCount = sector->maxPointCount < sectorAlternativeNeighbordsCount ? sector->maxPointCount : sectorAlternativeNeighbordsCount;
+
       // 记录按照样本点与中心点距离排序
-      qsort(distanceAnglePointerCache, sectorAlternativeNeighbordsCount, sizeof(struct DistanceAngle *), distanceToCentroidCmp);
-      for (int j = 0; j < sectorAlternativeNeighbordsCount; ++j)
+      for (int j = 0; j < maxCount; ++j)
       {
-        struct DistanceAngle *point = distanceAnglePointerCache[j];
-        if (count < maxCount)
+        // 使用选择排序找到距离最近的样本点
+        int minDistanceAnglePtrIndex = j;
+        struct DistanceAngle *minDistanceAnglePtr = distanceAnglePointerCache[j];
+        for (int k = j + 1; k < sectorAlternativeNeighbordsCount; ++k)
         {
-          neighbords[neighbordsCount] = point->index;
-          neighbordsDistance[neighbordsCount] = point->distance;
-          ++neighbordsCount;
-          ++count;
+          if (distanceAnglePointerCache[k]->distance < minDistanceAnglePtr->distance)
+          {
+            minDistanceAnglePtrIndex = k;
+            minDistanceAnglePtr = distanceAnglePointerCache[k];
+          }
         }
-        else
-          break;
+        distanceAnglePointerCache[minDistanceAnglePtrIndex] = distanceAnglePointerCache[j];
+        distanceAnglePointerCache[j] = minDistanceAnglePtr;
+
+        neighbords[neighbordsCount] = minDistanceAnglePtr->index;
+        neighbordsDistance[neighbordsCount] = minDistanceAnglePtr->distance;
+        ++neighbordsCount;
       }
     }
   }
   // TODO: 某个扇区的样本点数目不够的话将其丢弃？ ArcGIS的做法并没有将其丢弃
 
   return neighbordsCount;
-}
-
-int distanceToCentroidCmp(const void *a, const void *b)
-{
-  double distanceA = (*(struct DistanceAngle **)a)->distance, distanceB = (*(struct DistanceAngle **)b)->distance;
-
-  return (distanceA > distanceB) - (distanceA < distanceB);
 }
 
 struct SectorsWrap *makeSectors(struct NeighborhoodOption *neighborOpt)
