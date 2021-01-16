@@ -22,9 +22,8 @@ struct PointsIndex
 // 记录扇区的id及其包含的临近点数量
 struct Sector
 {
-  int id;
-  int minPointCount; // 扇区内容许的最大样本点数量(includsive)
-  int maxPointCount; // 扇区内容许的最小样本点数量(includsive)
+  int minNeighbords; // 扇区内容许的最大样本点数量(includsive)
+  int maxNeighbords; // 扇区内容许的最小样本点数量(includsive)
   double angleFrom;  // 起始角度(includsive: 如果样本点角度等于起始角度则将该点纳入扇区)
   double angleTo;    // 终止角度(excludsive: 如果样本点角度等于终止角度则不将该点纳入扇区)
 };

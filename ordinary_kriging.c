@@ -49,7 +49,7 @@ double *ordinaryKriging(struct Points *points,
   struct DistanceAngle **distanceAnglePointerCache = malloc(sizeof(struct DistanceAngle *) * points->numbers);
 
   // 3. 栅格点插值
-  int maxDimen = 2 + sectorsWrap->count * sectorsWrap->sectors[0].maxPointCount;
+  int maxDimen = 2 + sectorsWrap->count * sectorsWrap->sectors[0].maxNeighbords;
   double **A = mat_zeros(maxDimen, maxDimen);    // 矩阵：系数矩阵和结果矩阵
   double *W = malloc(maxDimen * sizeof(double)); // 权重
   int *neighbords = malloc(sizeof(int) * points->numbers);
@@ -141,7 +141,6 @@ int searchNeighborhoods(double cellX, double cellY, int *neighbords, double *nei
 {
   double *pointsData = points->data;
   const int pointsNumber = points->numbers;
-  struct DistanceAngle *pDistanceAngle;
 
   // 首先计算栅格像素中心点（x, y）同各样本点的距离 & 角度
   for (int i = 0; i < pointsNumber; ++i, ++pointsData)
@@ -154,7 +153,7 @@ int searchNeighborhoods(double cellX, double cellY, int *neighbords, double *nei
     // Note: 样本点与中心点的角度范围为[0, 2PI), 像元中心与样本点连线与网格北的夹角
     angle += ((angle >= -M_PI_2) ? M_PI_2 : (M_2PI + M_PI_2));
 
-    pDistanceAngle = distanceAnglePointerCache[i] = distanceAngleCache + i;
+    struct DistanceAngle *pDistanceAngle = distanceAnglePointerCache[i] = distanceAngleCache + i;
     pDistanceAngle->index = i;
     pDistanceAngle->distance = distance;
     pDistanceAngle->angle = angle;
@@ -182,8 +181,9 @@ int searchNeighborhoods(double cellX, double cellY, int *neighbords, double *nei
     const struct Sector *sector = &sectorsWrap->sectors[i];
     const double sectorAngleFrom = sector->angleFrom;
     const double sectorAngleTo = sector->angleTo;
-    const int sectorMinPointCount = sector->minPointCount;
-    const int sectorMaxPointCount = sector->maxPointCount;
+    const int sectorMinNeighbors = sector->minNeighbords;
+    const int sectorMaxNeighbords = sector->maxNeighbords;
+    int sectorNeighbords = 0;
 
     firstPointIndex = lastPointIndex;
     while (lastPointIndex < pointsNumber)
@@ -199,16 +199,10 @@ int searchNeighborhoods(double cellX, double cellY, int *neighbords, double *nei
       }
     }
 
-    if (firstPointIndex == lastPointIndex)
-    {
-      // 该扇区没有点，循环下一扇区
-      continue;
-    }
-
     // 满足条件的样本点的计数
     int sectorPointNumbers = lastPointIndex - firstPointIndex;
-    int maxSelectionNumbers = sectorMaxPointCount < sectorPointNumbers ? sectorMaxPointCount : sectorPointNumbers;
-    int minSelectionNumbers = sectorMinPointCount < sectorPointNumbers ? sectorMinPointCount : sectorPointNumbers;
+    int maxSelectionNumbers = sectorMaxNeighbords < sectorPointNumbers ? sectorMaxNeighbords : sectorPointNumbers;
+    int minSelectionNumbers = sectorMinNeighbors < sectorPointNumbers ? sectorMinNeighbors : sectorPointNumbers;
 
     // 记录按照样本点与中心点距离排序
     for (int j = firstPointIndex, maxJ = j + maxSelectionNumbers; j < maxJ; ++j)
@@ -229,12 +223,8 @@ int searchNeighborhoods(double cellX, double cellY, int *neighbords, double *nei
 
       if (minDistanceAnglePtr->distance > neighborOpt->maxDistance)
       {
-        int exceededNumbers = (j - firstPointIndex) - sectorMinPointCount;
-
-        if (exceededNumbers >= 0)
+        if (sectorNeighbords >= sectorMinNeighbors)
         {
-          // ArcGIS说，，已经够了，不要了，超出sector.minPOintCount的那些点就留着吧..
-          // neighbordsCount -= exceededNumbers;
           break;
         }
         else
@@ -246,6 +236,7 @@ int searchNeighborhoods(double cellX, double cellY, int *neighbords, double *nei
       neighbords[neighbordsCount] = minDistanceAnglePtr->index;
       neighbordsDistance[neighbordsCount] = minDistanceAnglePtr->distance;
       ++neighbordsCount;
+      ++sectorNeighbords;
     }
   }
   // TODO: 某个扇区的样本点数目不够的话将其丢弃？ ArcGIS的做法并没有将其丢弃
@@ -284,9 +275,8 @@ struct SectorsWrap *makeSectors(struct NeighborhoodOption *neighborOpt)
   for (int i = 0; i < sectorsCount; ++i)
   {
     struct Sector *sector = &sectors[i];
-    sector->id = i;
-    sector->minPointCount = neighborOpt->minNeighbords;
-    sector->maxPointCount = neighborOpt->maxNeighbords;
+    sector->minNeighbords = neighborOpt->minNeighbords;
+    sector->maxNeighbords = neighborOpt->maxNeighbords;
 
     if (i)
     {

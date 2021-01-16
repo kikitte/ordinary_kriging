@@ -16,6 +16,9 @@
     "mutex": "c",
     "ranges": "c",
     "streambuf": "c",
-    "thread": "c"
+    "thread": "c",
+    "variant": "cpp",
+    "*.def": "cpp",
+    "*.inc": "cpp"
   }
 }
