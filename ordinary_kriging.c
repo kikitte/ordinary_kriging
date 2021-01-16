@@ -10,8 +10,12 @@
 
 // #define MAKE_SECTORS_DEBUG
 
-// 根据扇区类型搜索用于克里金插值的点
+/*
+ * 根据扇区类型搜索用于克里金插值的点
+ * 须知：对于扇区角度排序有依赖，扇区的角度范围必须随index顺序增长
+ */
 int searchNeighborhoods(double cellX, double cellY, int *neighbords, double *neighbordsDistance, struct Points *points, struct NeighborhoodOption *neighborOpt, struct SectorsWrap *sectorsWrap, struct DistanceAngle *distanceAngleCache, struct DistanceAngle **distanceAnglePointerCache);
+int cmpDistanceAngleByAngle(const void *, const void *);
 // 根据临近点搜索条件生成sectors
 struct SectorsWrap *makeSectors(struct NeighborhoodOption *neighborOpt);
 
@@ -137,79 +141,111 @@ int searchNeighborhoods(double cellX, double cellY, int *neighbords, double *nei
 {
   double *pointsData = points->data;
   const int pointsNumber = points->numbers;
-  const double maxDistance = neighborOpt->maxDistance;
-  const int sectorType = neighborOpt->sectorType;
-  const int minNeighbords = neighborOpt->minNeighbords;
-  const int maxNeighbords = neighborOpt->maxNeighbords;
+  struct DistanceAngle *pDistanceAngle;
 
   // 首先计算栅格像素中心点（x, y）同各样本点的距离 & 角度
-  int alternativeNeighbordsCount = 0;
   for (int i = 0; i < pointsNumber; ++i, ++pointsData)
   {
     // 样本点相对于像元中心点的坐标
     double pointX = *pointsData++ - cellX, pointY = *pointsData++ - cellY;
     double distance = sqrt(pointX * pointX + pointY * pointY);
-    // Note: ArcGIS好像超出范围了也要搜索如果扇区里点数不够的话, 这里不采用这种策略
-    if (distance < maxDistance)
-    {
-      struct DistanceAngle *ppxd = distanceAngleCache + alternativeNeighbordsCount++;
-      ppxd->index = i;
-      ppxd->distance = distance;
-      // 样本点与栅格像元中心点重合. atan2的两个参数均为0, 这时通常返回0， 所以这是可以接受的而无须特殊处理, 参考： https://stackoverflow.com/questions/47909048/what-will-be-atan2-output-for-both-x-and-y-as-0
-      double angle = -atan2(pointY, pointX);
-      // Note: 样本点与中心点的角度范围为[0, 2PI), 像元中心与样本点连线与网格北的夹角
-      angle += ((angle >= -M_PI_2) ? M_PI_2 : (M_2PI + M_PI_2));
+    // 样本点与栅格像元中心点重合. atan2的两个参数均为0, 这时通常返回0， 所以这是可以接受的而无须特殊处理, 参考： https://stackoverflow.com/questions/47909048/what-will-be-atan2-output-for-both-x-and-y-as-0
+    double angle = -atan2(pointY, pointX);
+    // Note: 样本点与中心点的角度范围为[0, 2PI), 像元中心与样本点连线与网格北的夹角
+    angle += ((angle >= -M_PI_2) ? M_PI_2 : (M_2PI + M_PI_2));
 
-      ppxd->angle = angle;
-    }
+    pDistanceAngle = distanceAnglePointerCache[i] = distanceAngleCache + i;
+    pDistanceAngle->index = i;
+    pDistanceAngle->distance = distance;
+    pDistanceAngle->angle = angle;
   }
 
+  // 如果最后一个扇区的夹角大于2PI
+  if (sectorsWrap->sectors[sectorsWrap->count - 1].angleTo > M_2PI)
+  {
+    const double firstSectorAngleFrom = sectorsWrap->sectors[0].angleFrom;
+    for (int i = 0; i < pointsNumber; ++i)
+    {
+      if (distanceAnglePointerCache[i]->angle < firstSectorAngleFrom)
+      {
+        distanceAnglePointerCache[i]->angle += M_2PI;
+      }
+    }
+  }
+  // 将样本点按照夹角排序
+  qsort(distanceAnglePointerCache, pointsNumber, sizeof(struct DistanceAngle *), cmpDistanceAngleByAngle);
+
   // 迭代每一个扇区，然后将满足角度条件的点按距离由近及远排序。
-  int neighbordsCount = 0;
+  int neighbordsCount = 0, firstPointIndex = 0, lastPointIndex = 0;
   for (int i = 0; i < sectorsWrap->count; ++i)
   {
-    struct Sector *sector = &sectorsWrap->sectors[i];
-    double sectorAngleFrom = sector->angleFrom;
-    double sectorAngleTo = sector->angleTo;
-    int sectorAlternativeNeighbordsCount = 0;
+    const struct Sector *sector = &sectorsWrap->sectors[i];
+    const double sectorAngleFrom = sector->angleFrom;
+    const double sectorAngleTo = sector->angleTo;
+    const int sectorMinPointCount = sector->minPointCount;
+    const int sectorMaxPointCount = sector->maxPointCount;
 
-    // 迭代每一个样本点，如果该样本点的角度落入扇区，则将其记录
-    // 之后将这些样本点按照距离排序，再按照距离远近和扇区能够容纳的样本点数量将其纳入扇区
-
-    for (int j = 0; j < alternativeNeighbordsCount; ++j)
+    firstPointIndex = lastPointIndex;
+    while (lastPointIndex < pointsNumber)
     {
-      double angle = (distanceAngleCache + j)->angle;
-      double angleAdd2PI = angle + M_2PI;
-      if ((angle >= sectorAngleFrom && angle < sectorAngleTo) || (angleAdd2PI >= sectorAngleFrom && angleAdd2PI < sectorAngleTo))
-        distanceAnglePointerCache[sectorAlternativeNeighbordsCount++] = distanceAngleCache + j;
+      double angle = distanceAnglePointerCache[lastPointIndex]->angle;
+      if (angle >= sectorAngleFrom && angle < sectorAngleTo)
+      {
+        ++lastPointIndex;
+      }
+      else
+      {
+        break;
+      }
     }
 
-    if (sectorAlternativeNeighbordsCount)
+    if (firstPointIndex == lastPointIndex)
     {
-      // 满足条件的样本点的计数
-      int maxCount = sector->maxPointCount < sectorAlternativeNeighbordsCount ? sector->maxPointCount : sectorAlternativeNeighbordsCount;
+      // 该扇区没有点，循环下一扇区
+      continue;
+    }
 
-      // 记录按照样本点与中心点距离排序
-      for (int j = 0; j < maxCount; ++j)
+    // 满足条件的样本点的计数
+    int sectorPointNumbers = lastPointIndex - firstPointIndex;
+    int maxSelectionNumbers = sectorMaxPointCount < sectorPointNumbers ? sectorMaxPointCount : sectorPointNumbers;
+    int minSelectionNumbers = sectorMinPointCount < sectorPointNumbers ? sectorMinPointCount : sectorPointNumbers;
+
+    // 记录按照样本点与中心点距离排序
+    for (int j = firstPointIndex, maxJ = j + maxSelectionNumbers; j < maxJ; ++j)
+    {
+      // 使用选择排序找到距离最近的样本点
+      int minDistanceAnglePtrIndex = j;
+      struct DistanceAngle *minDistanceAnglePtr = distanceAnglePointerCache[j];
+      for (int k = j + 1; k < lastPointIndex; ++k)
       {
-        // 使用选择排序找到距离最近的样本点
-        int minDistanceAnglePtrIndex = j;
-        struct DistanceAngle *minDistanceAnglePtr = distanceAnglePointerCache[j];
-        for (int k = j + 1; k < sectorAlternativeNeighbordsCount; ++k)
+        if (distanceAnglePointerCache[k]->distance < minDistanceAnglePtr->distance)
         {
-          if (distanceAnglePointerCache[k]->distance < minDistanceAnglePtr->distance)
-          {
-            minDistanceAnglePtrIndex = k;
-            minDistanceAnglePtr = distanceAnglePointerCache[k];
-          }
+          minDistanceAnglePtrIndex = k;
+          minDistanceAnglePtr = distanceAnglePointerCache[k];
         }
-        distanceAnglePointerCache[minDistanceAnglePtrIndex] = distanceAnglePointerCache[j];
-        distanceAnglePointerCache[j] = minDistanceAnglePtr;
-
-        neighbords[neighbordsCount] = minDistanceAnglePtr->index;
-        neighbordsDistance[neighbordsCount] = minDistanceAnglePtr->distance;
-        ++neighbordsCount;
       }
+      distanceAnglePointerCache[minDistanceAnglePtrIndex] = distanceAnglePointerCache[j];
+      distanceAnglePointerCache[j] = minDistanceAnglePtr;
+
+      if (minDistanceAnglePtr->distance > neighborOpt->maxDistance)
+      {
+        int exceededNumbers = (j - firstPointIndex) - sectorMinPointCount;
+
+        if (exceededNumbers >= 0)
+        {
+          // ArcGIS说，，已经够了，不要了，超出sector.minPOintCount的那些点就留着吧..
+          // neighbordsCount -= exceededNumbers;
+          break;
+        }
+        else
+        {
+          maxJ = firstPointIndex + minSelectionNumbers;
+        }
+      }
+
+      neighbords[neighbordsCount] = minDistanceAnglePtr->index;
+      neighbordsDistance[neighbordsCount] = minDistanceAnglePtr->distance;
+      ++neighbordsCount;
     }
   }
   // TODO: 某个扇区的样本点数目不够的话将其丢弃？ ArcGIS的做法并没有将其丢弃
@@ -282,4 +318,12 @@ struct SectorsWrap *makeSectors(struct NeighborhoodOption *neighborOpt)
   sectorsWrap->count = sectorsCount;
 
   return sectorsWrap;
+}
+
+int cmpDistanceAngleByAngle(const void *a, const void *b)
+{
+  double angleA = (*(struct DistanceAngle **)a)->angle;
+  double angleB = (*(struct DistanceAngle **)b)->angle;
+
+  return (angleA > angleB) - (angleA < angleB);
 }
