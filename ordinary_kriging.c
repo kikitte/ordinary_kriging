@@ -8,7 +8,6 @@
 #include "math/gaussian.h"
 #include "math/mat_ops.h"
 
-// #define MAKE_SECTORS_DEBUG
 
 /*
  * 根据扇区类型搜索用于克里金插值的点
@@ -290,17 +289,6 @@ struct SectorsWrap *makeSectors(struct NeighborhoodOption *neighborOpt)
       sector->angleTo = sectorInitOffsetAngle + ANGLE_PER_SECTOR;
     }
   }
-
-#ifdef MAKE_SECTORS_DEBUG
-
-  puts("sectors:");
-  for (int i = 0; i < sectorsCount; ++i)
-  {
-    struct NeighbordSector *sector = &sectors[i];
-    printf("\tid=%d, count=%d, angleFrom=%f, angleTo=%f\n", sector->id, sector->count, sector->angleFrom, sector->angleTo);
-  }
-
-#endif
 
   struct SectorsWrap *sectorsWrap = malloc(sizeof(struct SectorsWrap));
 
