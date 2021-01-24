@@ -3,20 +3,8 @@
     {
       "type": "cppbuild",
       "label": "ordinary kriging",
-      "command": "/usr/bin/gcc",
-      "args": [
-        "-O2",
-        "-g",
-        "-lm",
-        "-lgdal",
-        "${workspaceFolder}/main.c",
-        "${workspaceFolder}/ordinary_kriging.c",
-        "${workspaceFolder}/variogram.c",
-        "${workspaceFolder}/math/gaussian.c",
-        "${workspaceFolder}/math/mat_ops.c",
-        "-o",
-        "${workspaceFolder}/build/ordinary_kriging"
-      ],
+      "command": "make",
+      "args": [],
       "options": {
         "cwd": "${workspaceFolder}"
       },

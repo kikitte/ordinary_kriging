@@ -4,13 +4,9 @@
 // Purpose: Multiple semivariogram models for Kriging Implementation
 // https://github.com/CNCA-CeNAT/kriging/blob/master/src/Variogram.h
 
-#ifndef VARIOGRAM_H
-#define VARIOGRAM_H
-
-#define __USE_MISC
-
 //Standard and Math
 #include <stdlib.h>
+#include <string.h>
 #include "math.h"
 #include "constants.h"
 #include "variogram.h"
@@ -113,4 +109,33 @@ double circularVariogram(double H, double C0, double CX, double A)
 		return C0 + (CX - C0) * (1 - p * acos(e) + p * e * r);
 	}
 }
-#endif
+
+VariogramFunction getFunctionForVariogramType(const char *TYPE)
+{
+	if (!strcmp(TYPE, VARIOGRAM_MODEL_SPHERICAL))
+	{
+		return sphericalVariogram;
+	}
+	if (!strcmp(TYPE, VARIOGRAM_MODEL_EXPONENTIAL))
+	{
+		return exponentialVariogram;
+	}
+	if (!strcmp(TYPE, VARIOGRAM_MODEL_GAUSSIAN))
+	{
+		return gaussianVariogram;
+	}
+	if (!strcmp(TYPE, VARIOGRAM_MODEL_WAVE))
+	{
+		return waveVariogram;
+	}
+	if (!strcmp(TYPE, VARIOGRAM_MODEL_RATIONAL_QUADRATIC))
+	{
+		return rationalQuadraticVariogram;
+	}
+	if (!strcmp(TYPE, VARIOGRAM_MODEL_CIRCLULAR))
+	{
+		return circularVariogram;
+	}
+
+	return NULL;
+}

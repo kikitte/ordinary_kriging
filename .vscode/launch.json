@@ -10,14 +10,7 @@
       "request": "launch",
       "program": "${workspaceFolder}/build/ordinary_kriging",
       "args": [
-        "chap15/stations.csv",
-        "2",
-        "40000",
-        "12",
-        "2",
-        "5",
-        "7",
-        "200"
+        "/home/kikitte/geoanalyst/kriging/debug/config.json"
       ],
       "stopAtEntry": false,
       "cwd": "${workspaceFolder}",

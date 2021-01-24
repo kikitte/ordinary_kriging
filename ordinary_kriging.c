@@ -8,64 +8,42 @@
 #include "math/gaussian.h"
 #include "math/mat_ops.h"
 
-
 /*
  * 根据扇区类型搜索用于克里金插值的点
  * 须知：对于扇区角度排序有依赖，扇区的角度范围必须随index顺序增长
  */
-int searchNeighborhoods(double cellX, double cellY, int *neighbords, double *neighbordsDistance, struct Points *points, struct NeighborhoodOption *neighborOpt, struct SectorsWrap *sectorsWrap, struct DistanceAngle *distanceAngleCache, struct DistanceAngle **distanceAnglePointerCache);
-int cmpDistanceAngleByAngle(const void *, const void *);
-// 根据临近点搜索条件生成sectors
-struct SectorsWrap *makeSectors(struct NeighborhoodOption *neighborOpt);
+int search_neighbords(double cellX, double cellY, int *neighbords, double *neighbordsDistance, struct Points *points, struct SectorsWrap *sectorsWrap, struct DistanceAngle *distanceAngleCache, struct DistanceAngle **distanceAnglePointerCache);
+int compare_angle(const void *, const void *);
+void *convert_array(double *array, int arrayLength, GDALDataType gdt);
 
-double *ordinaryKriging(struct Points *points,
-                        struct VariogramModel *variogramOpt,
-                        struct NeighborhoodOption *neighborOpt,
-                        struct RasterInfo *rasterInfo)
+void *ordinary_kriging(struct Points *points, struct VariogramModel *variogramOpt, struct SectorsWrap *sectorsWrap, struct RasterInfo *rasterInfo, VariogramFunction modelFunction)
 {
-  // 获取半变异函数
-  double (*modelFnc)(double H, double C0, double CX, double A) = NULL;
-  switch (variogramOpt->VAR)
-  {
-  case VARIOGRAM_MODEL_LINEAR:
-    return NULL;
-  case VARIOGRAM_MODEL_SPHERICAL:
-    modelFnc = sphericalVariogram;
-    break;
-  case VARIOGRAM_MODEL_EXPONENTIAL:
-    modelFnc = exponentialVariogram;
-    break;
-  case VARIOGRAM_MODEL_GAUSSIAN:
-    modelFnc = gaussianVariogram;
-    break;
-  default:
-    return NULL;
-  }
-
-  // 2. 计算扇区参数
-  struct SectorsWrap *sectorsWrap = makeSectors(neighborOpt);
+  // 1. 计算扇区参数
   struct DistanceAngle *distanceAngleCache = malloc(sizeof(struct DistanceAngle) * points->numbers);
   struct DistanceAngle **distanceAnglePointerCache = malloc(sizeof(struct DistanceAngle *) * points->numbers);
 
-  // 3. 栅格点插值
+  // 2. 栅格点插值
+  const int RASTER_COLS = rasterInfo->COLS, RASTER_ROWS = rasterInfo->ROWS;
+  const int RASTER_CELL_NUMBERS = RASTER_COLS * RASTER_ROWS;
+
   int maxDimen = 2 + sectorsWrap->count * sectorsWrap->sectors[0].maxNeighbords;
   double **A = mat_zeros(maxDimen, maxDimen);    // 矩阵：系数矩阵和结果矩阵
   double *W = malloc(maxDimen * sizeof(double)); // 权重
   int *neighbords = malloc(sizeof(int) * points->numbers);
   double *neighbordsDistance = malloc(sizeof(double) * points->numbers);
   double *neighbordsValue = malloc(maxDimen * sizeof(double));
-  double *rasterArray = malloc(sizeof(double) * rasterInfo->cols * rasterInfo->rows); // 栅格以行存储
+  double *rasterArray = malloc(sizeof(double) * RASTER_CELL_NUMBERS); // 栅格以行存储
   double *rasterArrayPtr = rasterArray;
 
-  for (int r = 0; r < rasterInfo->rows; ++r)
+  for (int r = 0; r < RASTER_ROWS; ++r)
   {
-    double cellY = rasterInfo->top - rasterInfo->resolution * (r + 0.5);
-    for (int c = 0; c < rasterInfo->cols; ++c)
+    double cellY = rasterInfo->TOPlEFT_X - rasterInfo->RESOLUTION * (r + 0.5);
+    for (int c = 0; c < RASTER_COLS; ++c)
     {
-      double cellX = rasterInfo->left + rasterInfo->resolution * (c + 0.5);
+      double cellX = rasterInfo->TOPLEFT_Y + rasterInfo->RESOLUTION * (c + 0.5);
 
       // 搜索用于插值的临近样本点
-      int neighordsCount = searchNeighborhoods(cellX, cellY, neighbords, neighbordsDistance, points, neighborOpt, sectorsWrap, distanceAngleCache, distanceAnglePointerCache);
+      int neighordsCount = search_neighbords(cellX, cellY, neighbords, neighbordsDistance, points, sectorsWrap, distanceAngleCache, distanceAnglePointerCache);
       if (neighordsCount)
       {
         int pointBaseIndex = 0;
@@ -79,7 +57,7 @@ double *ordinaryKriging(struct Points *points,
 
           if (rr < neighordsCount)
           {
-            A[rr][dimen] = modelFnc(neighbordsDistance[rr], variogramOpt->C0, variogramOpt->CX, variogramOpt->A);
+            A[rr][dimen] = modelFunction(neighbordsDistance[rr], variogramOpt->NUGGET, variogramOpt->SILL, variogramOpt->RANGE);
 
             // 记录点m和点m的坐标和x、y的差值和距离
             double nx, ny, mx, my, mnx, mny, distance;
@@ -95,7 +73,7 @@ double *ordinaryKriging(struct Points *points,
               mnx = mx - nx, mny = my - ny;
               distance = sqrt(mnx * mnx + mny * mny);
 
-              A[cc][rr] = A[rr][cc] = modelFnc(distance, variogramOpt->C0, variogramOpt->CX, variogramOpt->A);
+              A[cc][rr] = A[rr][cc] = modelFunction(distance, variogramOpt->NUGGET, variogramOpt->SILL, variogramOpt->RANGE);
             }
           }
           else
@@ -116,10 +94,10 @@ double *ordinaryKriging(struct Points *points,
         }
         else
           // 无解
-          *rasterArrayPtr++ = rasterInfo->nodata;
+          *rasterArrayPtr++ = rasterInfo->NODATA_VALUE;
       }
       else
-        *rasterArrayPtr++ = rasterInfo->nodata;
+        *rasterArrayPtr++ = rasterInfo->NODATA_VALUE;
     }
   }
 
@@ -127,16 +105,24 @@ double *ordinaryKriging(struct Points *points,
   free_ptr(maxDimen, A);
   free(distanceAngleCache);
   free(distanceAnglePointerCache);
-  free(sectorsWrap->sectors);
-  free(sectorsWrap);
   free(neighbords);
   free(neighbordsDistance);
   free(neighbordsValue);
 
-  return rasterArray;
+  rasterArrayPtr = rasterArray;
+  void *newRasterArray = convert_array(rasterArrayPtr, RASTER_CELL_NUMBERS, rasterInfo->GDAL_GDT);
+  if (newRasterArray)
+  {
+    free(rasterArray);
+    return newRasterArray;
+  }
+  else
+  {
+    return rasterArray;
+  }
 }
 
-int searchNeighborhoods(double cellX, double cellY, int *neighbords, double *neighbordsDistance, struct Points *points, struct NeighborhoodOption *neighborOpt, struct SectorsWrap *sectorsWrap, struct DistanceAngle *distanceAngleCache, struct DistanceAngle **distanceAnglePointerCache)
+int search_neighbords(double cellX, double cellY, int *neighbords, double *neighbordsDistance, struct Points *points, struct SectorsWrap *sectorsWrap, struct DistanceAngle *distanceAngleCache, struct DistanceAngle **distanceAnglePointerCache)
 {
   double *pointsData = points->data;
   const int pointsNumber = points->numbers;
@@ -171,7 +157,7 @@ int searchNeighborhoods(double cellX, double cellY, int *neighbords, double *nei
     }
   }
   // 将样本点按照夹角排序
-  qsort(distanceAnglePointerCache, pointsNumber, sizeof(struct DistanceAngle *), cmpDistanceAngleByAngle);
+  qsort(distanceAnglePointerCache, pointsNumber, sizeof(struct DistanceAngle *), compare_angle);
 
   // 迭代每一个扇区，然后将满足角度条件的点按距离由近及远排序。
   int neighbordsCount = 0, firstPointIndex = 0, lastPointIndex = 0;
@@ -220,7 +206,7 @@ int searchNeighborhoods(double cellX, double cellY, int *neighbords, double *nei
       distanceAnglePointerCache[minDistanceAnglePtrIndex] = distanceAnglePointerCache[j];
       distanceAnglePointerCache[j] = minDistanceAnglePtr;
 
-      if (minDistanceAnglePtr->distance > neighborOpt->maxDistance)
+      if (minDistanceAnglePtr->distance > sector->maxDistance)
       {
         if (sectorNeighbords >= sectorMinNeighbors)
         {
@@ -243,65 +229,67 @@ int searchNeighborhoods(double cellX, double cellY, int *neighbords, double *nei
   return neighbordsCount;
 }
 
-struct SectorsWrap *makeSectors(struct NeighborhoodOption *neighborOpt)
-{
-  int sectorsCount = 0;
-  double sectorInitOffsetAngle = 0;
-
-  switch (neighborOpt->sectorType)
-  {
-  case SECTOR_TYPE_1:
-    sectorsCount = 1;
-    break;
-  case SECTOR_TYPE_4S:
-    sectorsCount = 4;
-    break;
-  case SECTOR_TYPE_4S_45D:
-    sectorsCount = 4;
-    sectorInitOffsetAngle = M_PI_4;
-    break;
-  case SECTOR_TYPE_8:
-    sectorsCount = 8;
-    break;
-  default:
-    return NULL;
-  }
-
-  struct Sector *sectors = malloc(sizeof(struct Sector) * sectorsCount);
-
-  const double ANGLE_PER_SECTOR = 2 * M_PI / sectorsCount;
-
-  for (int i = 0; i < sectorsCount; ++i)
-  {
-    struct Sector *sector = &sectors[i];
-    sector->minNeighbords = neighborOpt->minNeighbords;
-    sector->maxNeighbords = neighborOpt->maxNeighbords;
-
-    if (i)
-    {
-      struct Sector *lastSector = &sectors[i - 1];
-      sector->angleFrom = lastSector->angleTo;
-      sector->angleTo = lastSector->angleTo + ANGLE_PER_SECTOR;
-    }
-    else
-    {
-      sector->angleFrom = sectorInitOffsetAngle;
-      sector->angleTo = sectorInitOffsetAngle + ANGLE_PER_SECTOR;
-    }
-  }
-
-  struct SectorsWrap *sectorsWrap = malloc(sizeof(struct SectorsWrap));
-
-  sectorsWrap->sectors = sectors;
-  sectorsWrap->count = sectorsCount;
-
-  return sectorsWrap;
-}
-
-int cmpDistanceAngleByAngle(const void *a, const void *b)
+int compare_angle(const void *a, const void *b)
 {
   double angleA = (*(struct DistanceAngle **)a)->angle;
   double angleB = (*(struct DistanceAngle **)b)->angle;
 
   return (angleA > angleB) - (angleA < angleB);
+}
+
+void *convert_array(double *array, int arrayLength, GDALDataType gdt)
+{
+  switch (gdt)
+  {
+  case GDT_Byte:
+  {
+    char *rasterArrayChar = malloc(sizeof(char) * arrayLength);
+    char *rasterArrayCharPtr = rasterArrayChar;
+    for (int i = 0; i < arrayLength; ++i)
+      *rasterArrayCharPtr++ = *array++;
+    return rasterArrayChar;
+  }
+  case GDT_Int16:
+  {
+    int16_t *rasterArrayInt16 = malloc(sizeof(int16_t) * arrayLength);
+    int16_t *rasterArrayInt16Ptr = rasterArrayInt16;
+    for (int i = 0; i < arrayLength; ++i)
+      *rasterArrayInt16Ptr++ = *array++;
+    return rasterArrayInt16;
+  }
+  case GDT_Int32:
+  {
+    int32_t *rasterArrayInt32 = malloc(sizeof(int32_t) * arrayLength);
+    int32_t *rasterArrayInt32Ptr = rasterArrayInt32;
+    for (int i = 0; i < arrayLength; ++i)
+      *rasterArrayInt32Ptr++ = *array++;
+    return rasterArrayInt32;
+  }
+  case GDT_UInt16:
+  {
+    uint16_t *rasterArrayUInt16 = malloc(sizeof(uint16_t) * arrayLength);
+    uint16_t *rasterArrayUInt16Ptr = rasterArrayUInt16;
+    for (int i = 0; i < arrayLength; ++i)
+      *rasterArrayUInt16Ptr++ = *array++;
+    return rasterArrayUInt16;
+  }
+  case GDT_UInt32:
+  {
+    uint32_t *rasterArrayUInt32 = malloc(sizeof(uint32_t) * arrayLength);
+    uint32_t *rasterArrayUInt32Ptr = rasterArrayUInt32;
+    for (int i = 0; i < arrayLength; ++i)
+      *rasterArrayUInt32Ptr++ = *array++;
+    return rasterArrayUInt32;
+  }
+  case GDT_Float32:
+  {
+    float *rasterArrayFloat = malloc(sizeof(float) * arrayLength);
+    float *rasterArrayFloatPtr = rasterArrayFloat;
+    for (int i = 0; i < arrayLength; ++i)
+      *rasterArrayFloatPtr++ = *array++;
+    return rasterArrayFloat;
+  }
+  default:
+    return NULL;
+  }
 }

@@ -3,157 +3,81 @@
 #include <string.h>
 #include <math.h>
 #include <float.h>
-#include <gdal.h>
-#include <cpl_conv.h>
 #include "ordinary_kriging.h"
 #include "variogram.h"
+#include "constants.h"
+#include "rasterio.h"
+#include "config.h"
+#include "cJSON/cJSON.h"
 
-void saveRaster(struct RasterInfo rastParam, void *arr, const char *name)
-{
-  GDALDriverH hTiff = GDALGetDriverByName("GTiff");
-  GDALDatasetH ds = GDALCreate(hTiff, name, rastParam.cols, rastParam.rows, 1,
-                               GDT_Float64, NULL);
-  double geoTransform[] = {rastParam.left, rastParam.resolution, 0,
-                           rastParam.top, 0, -rastParam.resolution};
-  GDALSetGeoTransform(ds, geoTransform);
-  GDALRasterIO(GDALGetRasterBand(ds, 1), GF_Write, 0, 0, rastParam.cols,
-               rastParam.rows, arr, rastParam.cols,
-               rastParam.rows, GDT_Float64, 0, 0);
-  GDALClose(ds);
-}
+// 根据临近点搜索条件生成sectors
+struct SectorsWrap *make_sectorswrap(struct NeighborhoodOption *neighborOpt);
 
 // #define DEBUG
 // #define BINNING_DEBUG
 
-double *readSamplePointFromFile(char *, int *);
-
-// 区间分组：用于计算适配模型的参数
-void binning(struct Points *points, double lag, int lagNumbers, int *lagsSemivarCount, double *lagsSemivarSum);
-// 在没有制定输出栅格参数时根据已有条件生成默认参数
-struct RasterInfo *deafultRasterFromPoints(struct Points *points);
+struct Points *readSamplePointFromFile(const char *filePath);
 
 int main(int argc, char **argv)
 {
   // process args
-  if (9 != argc)
+  if (2 != argc)
   {
-    puts("missing arguments.");
-    puts("kriging <sample_points> <variogram_model> <lag> <lag_numbers> <min_neighbors> <max_neighbors> <sector_type> <raster_cell_size>");
+    puts("Usage: oridinary_kriging <config>");
     exit(EXIT_FAILURE);
   }
-  char *argSamplePoints = argv[1];
-  char *argVariogramModel = argv[2];
-  char *argLag = argv[3];
-  char *argLagNumbers = argv[4];
-  char *argMinNeighbors = argv[5];
-  char *argMaxNeighbors = argv[6];
-  char *argSectorType = argv[7];
-  char *argRasterCellSize = argv[8];
+  char *configPath = argv[1];
+  cJSON *config = parse_config(configPath);
+
+  char *inputPointsPath = get_input_points_path(config);
+  char *outputRasterPath = get_output_raster_path(config);
+  struct NeighborhoodOption *neighborOption = get_neighborhood(config);
+  struct VariogramModel *variogramOpt = get_variogram(config);
+  struct RasterInfo *rasterInfo = get_raster(config);
+
+  if (NULL == inputPointsPath || NULL == outputRasterPath ||
+      NULL == neighborOption || NULL == variogramOpt ||
+      NULL == rasterInfo)
+  {
+    free(inputPointsPath);
+    free(outputRasterPath);
+    free(neighborOption);
+    free(variogramOpt);
+    free(rasterInfo);
+    cJSON_Delete(config);
+    exit(EXIT_FAILURE);
+  }
 
   // param1: sample data [x1, y1, v1, x2, y2, v2, ...]
-  int samplePointNumbers = 0;
-  double *samplePoints = readSamplePointFromFile(argSamplePoints, &samplePointNumbers);
-  if (NULL == samplePoints)
+  struct Points *points = readSamplePointFromFile(inputPointsPath);
+  if (NULL == points)
   {
-    printf("error on reading data from file: %s\n", argSamplePoints);
+    printf("error on reading data from file: %s\n", inputPointsPath);
     exit(EXIT_FAILURE);
   }
 
-  // param2: variogram model
-  const int variogramModel = atoi(argVariogramModel);
-  if (variogramModel != VARIOGRAM_MODEL_LINEAR &&
-      variogramModel != VARIOGRAM_MODEL_SPHERICAL &&
-      variogramModel != VARIOGRAM_MODEL_EXPONENTIAL &&
-      variogramModel != VARIOGRAM_MODEL_GAUSSIAN)
-  {
-    printf("unknow variogram model: %s\n", argVariogramModel);
-    exit(EXIT_FAILURE);
-  }
+  VariogramFunction modelFunction = getFunctionForVariogramType(variogramOpt->TYPE);
+  struct SectorsWrap *sectorsWrap = make_sectorswrap(neighborOption);
 
-  // param3 & 4: lag & lag numbers
-  const double lag = atof(argLag);
-  const int lagNumbers = atoi(argLagNumbers);
-  if (lag <= 0)
-  {
-    printf("invalid lag: %s\n", argLag);
-    exit(EXIT_FAILURE);
-  }
-  if (lagNumbers <= 0)
-  {
-    printf("invalid lag numbers: %s\n", argLagNumbers);
-    exit(EXIT_FAILURE);
-  }
-
-  // param5 & 6: min & max neighborhoods
-  const int minNeighbors = atoi(argMinNeighbors);
-  const int maxNeighbors = atoi(argMaxNeighbors);
-  if (minNeighbors <= 0)
-  {
-    printf("invalid minimum neighbords: %s\n", argMinNeighbors);
-    exit(EXIT_FAILURE);
-  }
-  if (maxNeighbors <= 0)
-  {
-    printf("invalid maximum neighbords: %s\n", argMaxNeighbors);
-    exit(EXIT_FAILURE);
-  }
-
-  // param 7: sector type
-  const int sectorType = atoi(argSectorType);
-  if (sectorType <= 0)
-  {
-    printf("invalid sector type: %s\n", argSectorType);
-    exit(EXIT_FAILURE);
-  }
-
-  // param8: raster cell size
-  const double rasterCellSize = atof(argRasterCellSize);
-  if (rasterCellSize <= 0)
-  {
-    printf("invalid lag raster cell size: %s\n", argRasterCellSize);
-    exit(EXIT_FAILURE);
-  }
-
-  // ordinaryKriging(samplePoints, samplePointNumbers, variogramModel, lag, lagNumbers, minNeighbors, maxNeighbors, sectorType, rasterCellSize);
-  struct Points krigingPoints = {samplePoints, samplePointNumbers};
-  struct VariogramModel variogramOpt = {
-      .VAR = VARIOGRAM_MODEL_SPHERICAL,
-      .C0 = 7.179056886219,
-      .CX = 7.179056886219 + 70.425579449182,
-      .A = 480000};
-  struct NeighborhoodOption neighborOption = {
-      .sectorType = sectorType,
-      .minNeighbords = 2,
-      .maxNeighbords = 5,
-      .maxDistance = 480000};
-  struct RasterInfo rasterInfo = {
-      .top = 881249.623773591,
-      .left = 227892.999058652,
-      .resolution = 200,
-      .cols = 2694,
-      .rows = 4064,
-      .nodata = 0};
-
-  // 2. 根据需要生成半变异图参数：nugget(ArcGIS使用weighted least squares算法生成), sill, range等
-  //    根据需要生成lag & lagNumbers
-
-  // int lagsSemivarCount[pointNumbers];
-  // double lagsSemivarSum[pointNumbers];
-  // struct PointPairDistance pointPairDistance[(int)(pointNumbers * (pointNumbers - 1) / 2)]; // 点与点之间配对个数
-  // binning(points, semivarOpt, lagsSemivarCount, lagsSemivarSum, pointPairDistance);
-
-  double(*rasterArr)[rasterInfo.cols] = ordinaryKriging(&krigingPoints, &variogramOpt, &neighborOption, &rasterInfo);
+  void *rasterArray = ordinary_kriging(points, variogramOpt, sectorsWrap, rasterInfo, modelFunction);
 
   // 写出栅格
-  GDALAllRegister();
-  saveRaster(rasterInfo, rasterArr, "/home/kikitte/geoanalyst/kriging/debug/out2.tif");
+  save_raster(rasterArray, rasterInfo, outputRasterPath);
 
-  free(rasterArr);
+  cJSON_Delete(config);
+  free(points->data);
+  free(points);
+  free(sectorsWrap->sectors);
+  free(sectorsWrap);
+  free(rasterArray);
+  free(neighborOption);
+  free(variogramOpt);
+  free(rasterInfo);
 
   return 0;
 }
 
-double *readSamplePointFromFile(char *filePath, int *pointNumbers)
+struct Points *readSamplePointFromFile(const char *filePath)
 {
   int ch;
 
@@ -166,7 +90,7 @@ double *readSamplePointFromFile(char *filePath, int *pointNumbers)
   // read the file content
   fseek(f, 0L, SEEK_END);
   long fileByteSize = ftell(f);
-  char *fileContent = malloc(fileByteSize);
+  char *fileContent = malloc(fileByteSize + 1);
   char *editableFileContent = fileContent;
   fseek(f, 0L, SEEK_SET);
 
@@ -246,121 +170,71 @@ double *readSamplePointFromFile(char *filePath, int *pointNumbers)
     *ediatbleValidPoints++ = *editablePoints++;
   }
 
-#ifdef DEBUG
-  for (int i = 0, len = validPointValueCount / 3; i < len; ++i)
-  {
-    printf("%f, %f, %f\n", validPoints[i * 3], validPoints[i * 3 + 1], validPoints[i * 3 + 2]);
-  }
-#endif
-
   free(points);
   free(fileContent);
   fclose(f);
 
-  *pointNumbers = validPointValueCount / 3;
-  return validPoints;
+  // *pointNumbers = validPointValueCount / 3;
+  struct Points *pointsStrucure = malloc(sizeof(struct Points));
+  pointsStrucure->numbers = validPointValueCount / 3;
+  pointsStrucure->data = validPoints;
+  return pointsStrucure;
 }
 
-void binning(struct Points *points,
-             const double lag,
-             const int lagNumbers,
-             int *lagsSemivarCount,
-             double *lagsSemivarSum)
+struct SectorsWrap *make_sectorswrap(struct NeighborhoodOption *neighborOpt)
 {
-  const double *pointsData = points->data;
-  const int pointNumbers = points->numbers;
+  int sectorsCount = 0;
+  double sectorInitOffsetAngle = 0;
 
-  for (int i = 0; i < lagNumbers; ++i)
+  if (!strcmp(SECTOR_TYPE_1, neighborOpt->SECTOR_TYPE))
   {
-    // 初始化
-    lagsSemivarCount[i] = 0;
-    lagsSemivarSum[i] = 0;
+    sectorsCount = 1;
   }
-  for (int i = 0; i < pointNumbers; ++i)
+  else if (!strcmp(SECTOR_TYPE_4S, neighborOpt->SECTOR_TYPE))
   {
-    const int ipIndex = i * 3;
-    double ipx = pointsData[ipIndex];
-    double ipy = pointsData[ipIndex + 1];
-    double ipv = pointsData[ipIndex + 2];
-    for (int j = i + 1; j < pointNumbers; ++j)
-    {
-      const int jpIndex = j * 3;
-      double jpx = pointsData[jpIndex];
-      double jpy = pointsData[jpIndex + 1];
-      double jpv = pointsData[jpIndex + 2];
-
-      const double ijDistance = sqrt(pow(ipx - jpx, 2) + pow(ipy - jpy, 2));
-      // 如果lagsSemivarIndex小于lagNumbers则表明距离在lag * lagNumbers以内。
-      const int lagsSemivarIndex = ijDistance / lag;
-      if (lagsSemivarIndex < lagNumbers)
-      {
-        const double semivariance = pow(ipv - jpv, 2) / 2;
-        ++lagsSemivarCount[lagsSemivarIndex];
-        lagsSemivarSum[lagsSemivarIndex] += semivariance;
-      }
-    }
+    sectorsCount = 4;
+  }
+  else if (!strcmp(SECTOR_TYPE_4S_45D, neighborOpt->SECTOR_TYPE))
+  {
+    sectorsCount = 4;
+    sectorInitOffsetAngle = M_PI_4;
+  }
+  else if (!strcmp(SECTOR_TYPE_8, neighborOpt->SECTOR_TYPE))
+  {
+    sectorsCount = 8;
+  }
+  else
+  {
+    return NULL;
   }
 
-#ifdef BINNING_DEBUG
-  printf("x = [");
-  for (int i = 0; i < lagNumbers; ++i)
+  struct Sector *sectors = malloc(sizeof(struct Sector) * sectorsCount);
+
+  const double ANGLE_PER_SECTOR = 2 * M_PI / sectorsCount;
+
+  for (int i = 0; i < sectorsCount; ++i)
   {
-    if (lagsSemivarCount[i])
-    {
-      printf("%d%s", (int)(lag * (i + 0.5)), i < lagNumbers - 1 ? ", " : "");
-    }
-  }
-  printf("]\n");
+    struct Sector *sector = &sectors[i];
+    sector->minNeighbords = neighborOpt->MIN_NEIGHBORDS;
+    sector->maxNeighbords = neighborOpt->MAX_HEIGHBORDS;
+    sector->maxDistance = neighborOpt->MAX_DISTANCE;
 
-  printf("y = [");
-  for (int i = 0; i < lagNumbers; ++i)
-  {
-    if (lagsSemivarCount[i])
+    if (i)
     {
-      printf("%f%s", lagsSemivarSum[i] / lagsSemivarCount[i], i < lagNumbers - 1 ? ", " : "");
+      struct Sector *lastSector = &sectors[i - 1];
+      sector->angleFrom = lastSector->angleTo;
+      sector->angleTo = lastSector->angleTo + ANGLE_PER_SECTOR;
     }
-  }
-  printf("]\n");
-
-#endif
-}
-
-struct RasterInfo *deafultRasterFromPoints(struct Points *points)
-{
-  struct RasterInfo *info = malloc(sizeof(struct RasterInfo));
-
-  double minx = DBL_MAX, miny = DBL_MAX, maxx = DBL_MIN, maxy = DBL_MIN;
-  double *pointsData = points->data;
-  const int pointNumbers = points->numbers;
-  for (int i = 0; i < pointNumbers; ++i)
-  {
-    int ptIndex = 3 * i;
-    double x = pointsData[ptIndex];
-    double y = pointsData[ptIndex + 1];
-
-    if (x < minx)
+    else
     {
-      minx = x;
-    }
-    if (x > maxx)
-    {
-      maxx = x;
-    }
-    if (y < miny)
-    {
-      miny = y;
-    }
-    if (y > maxy)
-    {
-      maxy = y;
+      sector->angleFrom = sectorInitOffsetAngle;
+      sector->angleTo = sectorInitOffsetAngle + ANGLE_PER_SECTOR;
     }
   }
 
-  info->top = maxy;
-  info->left = minx;
-  // 默认x方向像元数量为250个
-  info->cols = 250;
-  info->resolution = (int)((maxx - minx) / info->cols);
-  info->rows = (int)((maxy - miny) / info->resolution) + 1;
-  return info;
+  struct SectorsWrap *sectorsWrap = malloc(sizeof(struct SectorsWrap));
+  sectorsWrap->sectors = sectors;
+  sectorsWrap->count = sectorsCount;
+
+  return sectorsWrap;
 }
