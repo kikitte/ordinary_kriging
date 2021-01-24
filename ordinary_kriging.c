@@ -16,8 +16,16 @@ int search_neighbords(double cellX, double cellY, int *neighbords, double *neigh
 int compare_angle(const void *, const void *);
 void *convert_array(double *array, int arrayLength, GDALDataType gdt);
 
-void *ordinary_kriging(struct Points *points, struct VariogramModel *variogramOpt, struct SectorsWrap *sectorsWrap, struct RasterInfo *rasterInfo, VariogramFunction modelFunction)
+void *ordinary_kriging(void *param)
+// void ordinary_kriging(void *);
 {
+  struct OrdinaryKrigingParams *ordinaryKrigingParam = param;
+  struct Points *points = ordinaryKrigingParam->points;
+  struct VariogramModel *variogramOpt = ordinaryKrigingParam->variogramOpt;
+  struct SectorsWrap *sectorsWrap = ordinaryKrigingParam->sectorsWrap;
+  struct RasterInfo *rasterInfo = ordinaryKrigingParam->rasterInfo;
+  VariogramFunction modelFunction = ordinaryKrigingParam->modelFunction;
+
   // 1. 计算扇区参数
   struct DistanceAngle *distanceAngleCache = malloc(sizeof(struct DistanceAngle) * points->numbers);
   struct DistanceAngle **distanceAnglePointerCache = malloc(sizeof(struct DistanceAngle *) * points->numbers);
@@ -37,10 +45,10 @@ void *ordinary_kriging(struct Points *points, struct VariogramModel *variogramOp
 
   for (int r = 0; r < RASTER_ROWS; ++r)
   {
-    double cellY = rasterInfo->TOPlEFT_X - rasterInfo->RESOLUTION * (r + 0.5);
+    double cellY = rasterInfo->TOPLEFT_Y - rasterInfo->RESOLUTION * (r + 0.5);
     for (int c = 0; c < RASTER_COLS; ++c)
     {
-      double cellX = rasterInfo->TOPLEFT_Y + rasterInfo->RESOLUTION * (c + 0.5);
+      double cellX = rasterInfo->TOPLEFT_X + rasterInfo->RESOLUTION * (c + 0.5);
 
       // 搜索用于插值的临近样本点
       int neighordsCount = search_neighbords(cellX, cellY, neighbords, neighbordsDistance, points, sectorsWrap, distanceAngleCache, distanceAnglePointerCache);
@@ -114,12 +122,14 @@ void *ordinary_kriging(struct Points *points, struct VariogramModel *variogramOp
   if (newRasterArray)
   {
     free(rasterArray);
-    return newRasterArray;
+    rasterInfo->rasterArray = newRasterArray;
   }
   else
   {
-    return rasterArray;
+    rasterInfo->rasterArray = rasterArray;
   }
+
+  return NULL;
 }
 
 int search_neighbords(double cellX, double cellY, int *neighbords, double *neighbordsDistance, struct Points *points, struct SectorsWrap *sectorsWrap, struct DistanceAngle *distanceAngleCache, struct DistanceAngle **distanceAnglePointerCache)

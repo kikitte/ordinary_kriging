@@ -6,6 +6,6 @@
 char *read_file_byte(const char *path);
 
 
-CPLErr save_raster(void *raster_array, struct RasterInfo *rast_param, const char *output_filename);
+CPLErr save_raster(struct RasterInfo *rastInfo, struct RasterInfosWrap *rasterInfosWrap, const char *output_filename);
 
 #endif

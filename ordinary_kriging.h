@@ -64,7 +64,7 @@ struct NeighborhoodOption
 
 struct RasterInfo
 {
-  double TOPlEFT_X;
+  double TOPLEFT_X;
   double TOPLEFT_Y;
   int COLS;
   int ROWS;
@@ -72,8 +72,24 @@ struct RasterInfo
   double NODATA_VALUE;
   char *GDAL_DRIVER;     // gdal driver for output
   GDALDataType GDAL_GDT; // gdal data type for output
+  void *rasterArray;
 };
 
-void *ordinary_kriging(struct Points *points, struct VariogramModel *variogramOpt, struct SectorsWrap *sectorsWrap, struct RasterInfo *rasterInfo, VariogramFunction modelFunction);
+struct RasterInfosWrap
+{
+  struct RasterInfo *infos;
+  int numbers;
+};
+
+struct OrdinaryKrigingParams
+{
+  struct Points *points;
+  struct VariogramModel *variogramOpt;
+  struct SectorsWrap *sectorsWrap;
+  struct RasterInfo *rasterInfo;
+  VariogramFunction modelFunction;
+};
+
+void *ordinary_kriging(void *param);
 
 #endif

@@ -36,31 +36,38 @@ char *read_file_byte(const char *path)
   return fileContent;
 }
 
-CPLErr save_raster(void *raster_array, struct RasterInfo *rast_param, const char *output_filename)
+CPLErr save_raster(struct RasterInfo *rasterInfo, struct RasterInfosWrap *rasterPartsWrap, const char *output_filename)
 
 {
   GDALAllRegister();
 
-  GDALDriverH hTiff = GDALGetDriverByName(rast_param->GDAL_DRIVER);
+  GDALDriverH hTiff = GDALGetDriverByName(rasterInfo->GDAL_DRIVER);
 
   if (NULL == hTiff)
   {
-    fprintf(stderr, "unknow driver type: %s\n", rast_param->GDAL_DRIVER);
+    fprintf(stderr, "unknow driver type: %s\n", rasterInfo->GDAL_DRIVER);
     return CE_Failure;
   }
 
-  double geoTransform[] = {rast_param->TOPLEFT_Y, rast_param->RESOLUTION, 0, rast_param->TOPlEFT_X, 0, -rast_param->RESOLUTION};
+  double geoTransform[] = {rasterInfo->TOPLEFT_X, rasterInfo->RESOLUTION, 0, rasterInfo->TOPLEFT_Y, 0, -rasterInfo->RESOLUTION};
 
-  GDALDatasetH ds = GDALCreate(hTiff, output_filename, rast_param->COLS, rast_param->ROWS, 1, rast_param->GDAL_GDT, NULL);
+  GDALDatasetH ds = GDALCreate(hTiff, output_filename, rasterInfo->COLS, rasterInfo->ROWS, 1, rasterInfo->GDAL_GDT, NULL);
 
   GDALSetGeoTransform(ds, geoTransform);
 
   GDALRasterBandH band1 = GDALGetRasterBand(ds, 1);
-  const int COLS = rast_param->COLS, ROWS = rast_param->ROWS;
-  const GDALDataType GDT = rast_param->GDAL_GDT;
-  CPLErr err = GDALRasterIO(band1, GF_Write, 0, 0, COLS, ROWS, raster_array, COLS, ROWS, GDT, 0, 0);
+  const double RESOLUTION = rasterInfo->RESOLUTION;
+  const GDALDataType GDT = rasterInfo->GDAL_GDT;
+  for (int i = 0; i < rasterPartsWrap->numbers; ++i)
+  {
+    struct RasterInfo *partInfo = rasterPartsWrap->infos + i;
+    const int OFFSET_COLS = round((partInfo->TOPLEFT_X - rasterInfo->TOPLEFT_X) / RESOLUTION),
+              OFFSET_ROWS = round((rasterInfo->TOPLEFT_Y - partInfo->TOPLEFT_Y) / RESOLUTION);
+    const int COLS = partInfo->COLS, ROWS = partInfo->ROWS;
+    CPLErr err = GDALRasterIO(band1, GF_Write, OFFSET_COLS, OFFSET_ROWS, COLS, ROWS, partInfo->rasterArray, COLS, ROWS, GDT, 0, 0);
+  }
 
   GDALClose(ds);
 
-  return err;
+  return CE_None;
 }

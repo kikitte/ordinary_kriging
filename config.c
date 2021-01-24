@@ -80,7 +80,7 @@ struct RasterInfo *get_raster(cJSON *config)
   }
 
   struct RasterInfo *rasterInfo = malloc(sizeof(struct RasterInfo));
-  rasterInfo->TOPlEFT_X = cJSON_GetObjectItem(rasterConf, "TOPlEFT_X")->valuedouble;
+  rasterInfo->TOPLEFT_X = cJSON_GetObjectItem(rasterConf, "TOPLEFT_X")->valuedouble;
   rasterInfo->TOPLEFT_Y = cJSON_GetObjectItem(rasterConf, "TOPLEFT_Y")->valuedouble;
   rasterInfo->RESOLUTION = cJSON_GetObjectItem(rasterConf, "RESOLUTION")->valuedouble;
   rasterInfo->COLS = cJSON_GetObjectItem(rasterConf, "COLS")->valueint;

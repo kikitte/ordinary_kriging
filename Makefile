@@ -4,7 +4,7 @@ PROGRAM = ordinary_kriging
 
 CC = gcc 
 
-LDLIBS = -lm -lgdal
+LDLIBS = -lm -lgdal -lpthread
 
 # -g Produce debugging information in the operating system's native format (stabs, COFF, XCOFF, or DWARF).
 CFLAGS = -std=c99 -O2
