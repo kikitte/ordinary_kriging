@@ -1,4 +1,4 @@
-#include "rasterio.h"
+#include <gdal.h>
 #include "variogram.h"
 
 #ifndef ORDINARY_KRIGING_H
@@ -11,7 +11,7 @@
 
 struct Points
 {
-  double *data;
+  double (*data)[3];
   int numbers;
 };
 
@@ -60,6 +60,18 @@ struct NeighborhoodOption
   int MIN_NEIGHBORDS;  // 最小临近点数量
   int MAX_HEIGHBORDS;  // 最大临近点数量
   double MAX_DISTANCE; // 每个扇区最大搜索距离
+};
+
+struct RasterInfo
+{
+  double TOPlEFT_X;
+  double TOPLEFT_Y;
+  int COLS;
+  int ROWS;
+  double RESOLUTION;
+  double NODATA_VALUE;
+  char *GDAL_DRIVER;     // gdal driver for output
+  GDALDataType GDAL_GDT; // gdal data type for output
 };
 
 void *ordinary_kriging(struct Points *points, struct VariogramModel *variogramOpt, struct SectorsWrap *sectorsWrap, struct RasterInfo *rasterInfo, VariogramFunction modelFunction);

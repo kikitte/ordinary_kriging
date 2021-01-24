@@ -6,15 +6,12 @@
 #include "ordinary_kriging.h"
 #include "variogram.h"
 #include "constants.h"
-#include "rasterio.h"
 #include "config.h"
+#include "util.h"
 #include "cJSON/cJSON.h"
 
 // 根据临近点搜索条件生成sectors
 struct SectorsWrap *make_sectorswrap(struct NeighborhoodOption *neighborOpt);
-
-
-struct Points *readSamplePointFromFile(const char *filePath);
 
 int main(int argc, char **argv)
 {
@@ -31,25 +28,20 @@ int main(int argc, char **argv)
   struct NeighborhoodOption *neighborOption = get_neighborhood(config);
   struct VariogramModel *variogramOpt = get_variogram(config);
   struct RasterInfo *rasterInfo = get_raster(config);
+  struct Points *points = read_input_points(inputPointsPath);
 
   if (NULL == inputPointsPath || NULL == outputRasterPath ||
       NULL == neighborOption || NULL == variogramOpt ||
-      NULL == rasterInfo)
+      NULL == rasterInfo || NULL == points)
   {
-    free(inputPointsPath);
-    free(outputRasterPath);
     free(neighborOption);
     free(variogramOpt);
     free(rasterInfo);
+    if (points){
+      free(points->data);
+    }
+    free(points);
     cJSON_Delete(config);
-    exit(EXIT_FAILURE);
-  }
-
-  // param1: sample data [x1, y1, v1, x2, y2, v2, ...]
-  struct Points *points = readSamplePointFromFile(inputPointsPath);
-  if (NULL == points)
-  {
-    printf("error on reading data from file: %s\n", inputPointsPath);
     exit(EXIT_FAILURE);
   }
 
@@ -72,110 +64,6 @@ int main(int argc, char **argv)
   free(rasterInfo);
 
   return 0;
-}
-
-struct Points *readSamplePointFromFile(const char *filePath)
-{
-  int ch;
-
-  FILE *f = fopen(filePath, "r");
-  if (NULL == f)
-  {
-    return NULL;
-  }
-
-  // read the file content
-  fseek(f, 0L, SEEK_END);
-  long fileByteSize = ftell(f);
-  char *fileContent = malloc(fileByteSize + 1);
-  char *editableFileContent = fileContent;
-  fseek(f, 0L, SEEK_SET);
-
-  while ((ch = getc(f)) != EOF)
-  {
-    *editableFileContent++ = ch;
-  }
-  *editableFileContent++ = '\0';
-
-  unsigned lineCount = 0;
-  unsigned lastCharIsRN = 0;
-  editableFileContent = fileContent;
-  while ('\0' != (ch = *editableFileContent++))
-  {
-    if ('\r' == ch || '\n' == ch)
-    {
-      *(editableFileContent - 1) = '\n';
-
-      if (!lastCharIsRN)
-      {
-        ++lineCount;
-      }
-      lastCharIsRN = 1;
-    }
-    else
-    {
-      lastCharIsRN = 0;
-    }
-  }
-
-  ;
-  char *doubleStrEnd;
-  unsigned skipThisLine = 0;
-  unsigned validPointValueCount = 0;
-  double *points = malloc(sizeof(double) * lineCount * 3);
-  double *editablePoints = points;
-
-  for (editableFileContent = fileContent, ch = *fileContent; '\0' != ch; ch = *editableFileContent)
-  {
-    if (skipThisLine)
-    {
-      if ('\n' == ch)
-      {
-        skipThisLine = 0;
-      }
-      ++editableFileContent;
-      continue;
-    }
-
-    if ('\n' == ch && '\n' == *(editableFileContent + 1))
-    {
-      ++editableFileContent;
-      continue;
-    }
-
-    double val = strtod(editableFileContent, &doubleStrEnd);
-    if (editableFileContent == doubleStrEnd)
-    {
-      skipThisLine = 1;
-      ++editableFileContent;
-      continue;
-    }
-    else
-    {
-      ++validPointValueCount;
-      *editablePoints++ = val;
-      editableFileContent = doubleStrEnd + 1;
-    }
-  }
-
-  double *validPoints = malloc(sizeof(double) * validPointValueCount);
-  double *ediatbleValidPoints = validPoints;
-
-  editablePoints = points;
-  for (int i = 0; i < validPointValueCount; ++i)
-  {
-    *ediatbleValidPoints++ = *editablePoints++;
-  }
-
-  free(points);
-  free(fileContent);
-  fclose(f);
-
-  // *pointNumbers = validPointValueCount / 3;
-  struct Points *pointsStrucure = malloc(sizeof(struct Points));
-  pointsStrucure->numbers = validPointValueCount / 3;
-  pointsStrucure->data = validPoints;
-  return pointsStrucure;
 }
 
 struct SectorsWrap *make_sectorswrap(struct NeighborhoodOption *neighborOpt)

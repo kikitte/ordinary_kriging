@@ -1,6 +1,40 @@
+#include <stdio.h>
 #include <gdal.h>
 #include <cpl_conv.h>
-#include "rasterio.h"
+#include "util.h"
+
+char *read_file_byte(const char *path)
+{
+  FILE *f = fopen(path, "r");
+
+  if (NULL == f)
+  {
+    fprintf(stderr, "unable to read file: '%s'\n", path);
+    return NULL;
+  }
+
+  fseek(f, 0L, SEEK_END);
+  long fileSize = ftell(f);
+
+  if (fileSize == 0)
+  {
+    fclose(f);
+    return NULL;
+  }
+
+  fseek(f, 0L, SEEK_SET);
+  char *fileContent = malloc(sizeof(char) * fileSize + 1);
+  char *fileContentPtr = fileContent;
+  int ch;
+  while ((ch = fgetc(f)) != EOF)
+  {
+    *fileContentPtr++ = ch;
+  }
+  *fileContentPtr = '\0';
+
+  fclose(f);
+  return fileContent;
+}
 
 CPLErr save_raster(void *raster_array, struct RasterInfo *rast_param, const char *output_filename)
 

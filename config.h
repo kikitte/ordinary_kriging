@@ -17,4 +17,6 @@ struct RasterInfo *get_raster(cJSON *config);
 char *get_input_points_path(cJSON *config);
 // 或缺输出栅格的路径
 char *get_output_raster_path(cJSON *config);
+// 读取输入点
+struct Points *read_input_points(char *pointsPath);
 #endif

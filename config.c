@@ -2,6 +2,7 @@
 #include <string.h>
 #include <gdal.h>
 #include "config.h"
+#include "util.h"
 
 cJSON *parse_config(const char *configPath)
 {
@@ -14,17 +15,7 @@ cJSON *parse_config(const char *configPath)
   }
 
   // read the file content
-  fseek(f, 0L, SEEK_END);
-  long fileSize = ftell(f);
-  fseek(f, 0L, SEEK_SET);
-  char *fileContent = malloc(sizeof(char) * fileSize + 1);
-  char *fileContentPtr = fileContent;
-  int ch;
-  while ((ch = fgetc(f)) != EOF)
-  {
-    *fileContentPtr++ = ch;
-  }
-  *fileContentPtr++ = '\0';
+  char *fileContent = read_file_byte(configPath);
 
   cJSON *config = cJSON_Parse(fileContent);
   free(fileContent);
@@ -174,4 +165,58 @@ char *get_output_raster_path(cJSON *config)
     fprintf(stderr, "missing 'OUTPUT_RASTER' property\n");
     return NULL;
   }
+}
+
+struct Points *read_input_points(char *pointsPath)
+{
+  char *fileContent = read_file_byte(pointsPath);
+
+  cJSON *pointsArray = cJSON_Parse(fileContent);
+  free(fileContent);
+
+  if (NULL == pointsArray)
+  {
+    fprintf(stderr, "can't read points data from %s\n", pointsPath);
+    return NULL;
+  }
+
+  if (!cJSON_IsArray(pointsArray))
+  {
+    fprintf(stderr, "invalid points data\n");
+    cJSON_Delete(pointsArray);
+    return NULL;
+  }
+
+  struct Points *points = malloc(sizeof(struct Points));
+  points->numbers = cJSON_GetArraySize(pointsArray);
+  points->data = malloc(sizeof(double) * points->numbers * 3);
+  double(*pointsDataPtr)[3] = points->data;
+
+  cJSON *pointArray;
+  cJSON *pointElement;
+  cJSON_ArrayForEach(pointArray, pointsArray)
+  {
+    int pointDataIndex = 0;
+    double *pointData = *pointsDataPtr++;
+    cJSON_ArrayForEach(pointElement, pointArray)
+    {
+      if (!cJSON_IsNumber(pointElement))
+      {
+        free(points->data);
+        free(points);
+        cJSON_Delete(pointsArray);
+        return NULL;
+      }
+      else
+      {
+        if (pointDataIndex < 3)
+        {
+          pointData[pointDataIndex++] = pointElement->valuedouble;
+        }
+      }
+    }
+  }
+
+  cJSON_Delete(pointsArray);
+  return points;
 }

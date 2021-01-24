@@ -62,14 +62,14 @@ void *ordinary_kriging(struct Points *points, struct VariogramModel *variogramOp
             // 记录点m和点m的坐标和x、y的差值和距离
             double nx, ny, mx, my, mnx, mny, distance;
 
-            pointBaseIndex = neighbords[rr] * 3;
-            nx = points->data[pointBaseIndex], ny = points->data[++pointBaseIndex];
-            neighbordsValue[rr] = points->data[++pointBaseIndex];
+            pointBaseIndex = neighbords[rr];
+            nx = points->data[pointBaseIndex][0], ny = points->data[pointBaseIndex][1];
+            neighbordsValue[rr] = points->data[pointBaseIndex][2];
 
             for (int cc = rr + 1; cc < neighordsCount; ++cc)
             {
-              pointBaseIndex = neighbords[cc] * 3;
-              mx = points->data[pointBaseIndex], my = points->data[++pointBaseIndex];
+              pointBaseIndex = neighbords[cc];
+              mx = points->data[pointBaseIndex][0], my = points->data[pointBaseIndex][1];
               mnx = mx - nx, mny = my - ny;
               distance = sqrt(mnx * mnx + mny * mny);
 
@@ -124,14 +124,14 @@ void *ordinary_kriging(struct Points *points, struct VariogramModel *variogramOp
 
 int search_neighbords(double cellX, double cellY, int *neighbords, double *neighbordsDistance, struct Points *points, struct SectorsWrap *sectorsWrap, struct DistanceAngle *distanceAngleCache, struct DistanceAngle **distanceAnglePointerCache)
 {
-  double *pointsData = points->data;
+  const double(*pointsData)[3] = points->data;
   const int pointsNumber = points->numbers;
 
   // 首先计算栅格像素中心点（x, y）同各样本点的距离 & 角度
-  for (int i = 0; i < pointsNumber; ++i, ++pointsData)
+  for (int i = 0; i < pointsNumber; ++i)
   {
     // 样本点相对于像元中心点的坐标
-    double pointX = *pointsData++ - cellX, pointY = *pointsData++ - cellY;
+    double pointX = pointsData[i][0] - cellX, pointY = pointsData[i][1] - cellY;
     double distance = sqrt(pointX * pointX + pointY * pointY);
     // 样本点与栅格像元中心点重合. atan2的两个参数均为0, 这时通常返回0， 所以这是可以接受的而无须特殊处理, 参考： https://stackoverflow.com/questions/47909048/what-will-be-atan2-output-for-both-x-and-y-as-0
     double angle = -atan2(pointY, pointX);
