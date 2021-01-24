@@ -35,7 +35,7 @@ struct Sector
 struct SectorsWrap
 {
   struct Sector *sectors;
-  int count;
+  int numbers;
 };
 
 // // 记录样本点到像元中心点的角度与距离

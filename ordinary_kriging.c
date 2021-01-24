@@ -26,7 +26,7 @@ void *ordinary_kriging(struct Points *points, struct VariogramModel *variogramOp
   const int RASTER_COLS = rasterInfo->COLS, RASTER_ROWS = rasterInfo->ROWS;
   const int RASTER_CELL_NUMBERS = RASTER_COLS * RASTER_ROWS;
 
-  int maxDimen = 2 + sectorsWrap->count * sectorsWrap->sectors[0].maxNeighbords;
+  int maxDimen = 2 + sectorsWrap->numbers * sectorsWrap->sectors[0].maxNeighbords;
   double **A = mat_zeros(maxDimen, maxDimen);    // 矩阵：系数矩阵和结果矩阵
   double *W = malloc(maxDimen * sizeof(double)); // 权重
   int *neighbords = malloc(sizeof(int) * points->numbers);
@@ -145,7 +145,7 @@ int search_neighbords(double cellX, double cellY, int *neighbords, double *neigh
   }
 
   // 如果最后一个扇区的夹角大于2PI
-  if (sectorsWrap->sectors[sectorsWrap->count - 1].angleTo > M_2PI)
+  if (sectorsWrap->sectors[sectorsWrap->numbers - 1].angleTo > M_2PI)
   {
     const double firstSectorAngleFrom = sectorsWrap->sectors[0].angleFrom;
     for (int i = 0; i < pointsNumber; ++i)
@@ -161,7 +161,7 @@ int search_neighbords(double cellX, double cellY, int *neighbords, double *neigh
 
   // 迭代每一个扇区，然后将满足角度条件的点按距离由近及远排序。
   int neighbordsCount = 0, firstPointIndex = 0, lastPointIndex = 0;
-  for (int i = 0; i < sectorsWrap->count; ++i)
+  for (int i = 0; i < sectorsWrap->numbers; ++i)
   {
     const struct Sector *sector = &sectorsWrap->sectors[i];
     const double sectorAngleFrom = sector->angleFrom;

@@ -119,7 +119,7 @@ struct SectorsWrap *make_sectorswrap(struct NeighborhoodOption *neighborOpt)
 
   struct SectorsWrap *sectorsWrap = malloc(sizeof(struct SectorsWrap));
   sectorsWrap->sectors = sectors;
-  sectorsWrap->count = sectorsCount;
+  sectorsWrap->numbers = sectorsCount;
 
   return sectorsWrap;
 }
