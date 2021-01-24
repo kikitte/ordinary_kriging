@@ -13,14 +13,11 @@
 // 根据临近点搜索条件生成sectors
 struct SectorsWrap *make_sectorswrap(struct NeighborhoodOption *neighborOpt);
 
-// #define DEBUG
-// #define BINNING_DEBUG
 
 struct Points *readSamplePointFromFile(const char *filePath);
 
 int main(int argc, char **argv)
 {
-  // process args
   if (2 != argc)
   {
     puts("Usage: oridinary_kriging <config>");
