@@ -24,7 +24,7 @@ build/ordinary_kriging test/config.json
 
 配置文件介绍（以默认提供的配置文件为例）：
 
-```json
+```
 {
   // 输入的样本点JSON文件路径，该JSON内容基本格式为：Array<[x, y, z]>,可参见提供的事例数据
   "INPUT_POINTS": "/home/kikitte/geoanalyst/kriging/chap15/stations.json",
