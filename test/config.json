@@ -1,0 +1,26 @@
+{
+  "INPUT_POINTS": "/home/kikitte/geoanalyst/kriging/chap15/stations.json",
+  "OUTPUT_RASTER": "/home/kikitte/geoanalyst/kriging/debug/out2.tif",
+  "VariogramModel": {
+    "TYPE": "Spherical",
+    "NUGGET": 7.179056886219,
+    "SILL": 77.604636335401,
+    "RANGE": 480000
+  },
+  "NeighborhoodOption": {
+    "SECTOR_TYPE": "FourSector45Offset",
+    "MIN_NEIGHBORDS": 2,
+    "MAX_HEIGHBORDS": 5,
+    "MAX_DISTANCE": 480000
+  },
+  "RasterInfo": {
+    "TOPLEFT_X": 227942.9990586524945684,
+    "TOPLEFT_Y": 881299.6237735910108313,
+    "RESOLUTION": 100,
+    "COLS": 5388,
+    "ROWS": 8128,
+    "NODATA_VALUE": 0,
+    "GDAL_DRIVER": "GTiff",
+    "GDAL_GDT": "Float32"
+  }
+}

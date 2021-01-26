@@ -234,7 +234,6 @@ int search_neighbords(double cellX, double cellY, int *neighbords, double *neigh
       ++sectorNeighbords;
     }
   }
-  // TODO: 某个扇区的样本点数目不够的话将其丢弃？ ArcGIS的做法并没有将其丢弃
 
   return neighbordsCount;
 }
