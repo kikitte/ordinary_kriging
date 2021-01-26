@@ -1,6 +1,6 @@
 {
-  "INPUT_POINTS": "/home/kikitte/geoanalyst/kriging/chap15/stations.json",
-  "OUTPUT_RASTER": "/home/kikitte/geoanalyst/kriging/debug/out2.tif",
+  "INPUT_POINTS": "test/stations.json",
+  "OUTPUT_RASTER": "test/out2.tif",
   "VariogramModel": {
     "TYPE": "Spherical",
     "NUGGET": 7.179056886219,
