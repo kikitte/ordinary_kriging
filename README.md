@@ -1,92 +1,94 @@
-## 普通克里金插值
+## Ordinary Kriging Interpolation
 
-一个使用ArcGIS临近样本点搜索策略的普通克里金插值C语言实现。
+This is an c language implemetation using arcgis searching strategy.
 
-### 1. 亮点
+### 1. Highlight
 
-- 使用ArcGIS中对临近样本点的搜索策略，在半变异模型及其参数相同的情况下可得到相同结果
-- 多线程支持（默认使用全部可用的CPU），在得到相同插值结果的情况下速度为ArcGIS的4倍以上
-- 参数通过JSON文件进行配置
+- Use arcgis searching strategy to search neighbords of pixel. It produce the same result if semivariogram and it's parameter are the same.
+- Thread level paralle. The speed is 4x than ArcGIS.
+- Configuring in json file.
 
-### 2. 如何使用
+### 2. How to use
 
-在进行后续步骤之前请先确保安装GDAL依赖，由于不同操作系统的差异无法一一概括，所以此处不做介绍。
+You might install GDAL in your computer, but as it may be different among diffent system, so we ignore it here.
 
 ```bash
-# 克隆源码
+# clone soure code
 git clone https://www.github.com/kikitte/ordinary_kriging
-# 编译
+# compiling
 cd ordinary_kriging
 make
-# 运行测试数据
+# run with testing data
 build/ordinary_kriging test/config.json
 ```
 
-配置文件介绍（以默认提供的配置文件为例）：
+Configuration introduction
 
 ```
 {
-  // 输入的样本点JSON文件路径，该JSON内容基本格式为：Array<[x, y, z]>,可参见提供的事例数据
+  // input: the path of sample points
   "INPUT_POINTS": "/home/kikitte/geoanalyst/kriging/chap15/stations.json",
-  // 输出的栅格文件路径
+  // output: the path of result raster
   "OUTPUT_RASTER": "/home/kikitte/geoanalyst/kriging/debug/out2.tif",
-  // 半变异模型参数
+  // semivariogram model configuration
   "VariogramModel": {
-    // 半变异模型类型："Spherical", "Exponential", "Gaussian", "Wave", "RationalQuadratic", "Circular"
+    // the type of semivarogram model
     "TYPE": "Spherical",
-    // 块金
+    // nugget
     "NUGGET": 7.179056886219,
-    // 基台值
+    // sill
     "SILL": 77.604636335401,
-    // 搜索范围
+    // range
     "RANGE": 480000
   },
-  // 临近样本点搜索策略：完全参考ArcGIS
+  // Searching strategy configuration
   "NeighborhoodOption": {
-    // 扇区类型："OneSector", "FourSector", "FourSector45Offset", "EightSector"
+    // The type of sector："OneSector", "FourSector", "FourSector45Offset", "EightSector"
     "SECTOR_TYPE": "FourSector45Offset",
-    // 每个扇区内最少样本点数目
+    // The mininum number in each sector
     "MIN_NEIGHBORDS": 2,
-    // 扇区内最多样本点数目
+    // The maxinum number in each sector
     "MAX_HEIGHBORDS": 5,
-    // 扇区搜索最大距离
+    // The maxinum searching distance of each sector
     "MAX_DISTANCE": 480000
   },
-  // 输出栅格数据选项
+  // Output raster configuration
   "RasterInfo": {
-    // 栅格左上角点X坐标
+    // x coordinate of raster top-left corner
     "TOPLEFT_X": 227942.9990586524945684,
-    // 栅格左上角点Y坐标
+    // y coordinate of raster top-left corner
     "TOPLEFT_Y": 881299.6237735910108313,
-    // 栅格像元分辨率
+    // raster pixel size
     "RESOLUTION": 100,
-    // 栅格列数
+    // the column number of raster
     "COLS": 5388,
-    // 栅格行数
+    // the row number of raster
     "ROWS": 8128,
-    // 栅格空值
+    // nodata value of raster cell
     "NODATA_VALUE": 0,
-    // 输出的栅格的格式，参考：https://gdal.org/drivers/raster/index.html
+    // raster output format. reference: https://gdal.org/drivers/raster/index.html
     "GDAL_DRIVER": "GTiff",
-    // 栅格像元数值类型
+    // raster pixel type
     "GDAL_GDT": "Float32"
   }
 }
 ```
 
-### 3. 版权声明
+### 3. License
+### 3. Credit
 
-无。该程序为业余时间所作，纯属个人行为。你可以任意修改使用，如果这个工作对你有帮助话那就说明它是有价值的。
+None
 
-### 4. 致谢
+### 4. Thinks
 
 程序的完成参考或使用了很多其他人的代码，在此一并感谢，如下：
+This project use a lot of codes from internet, thanks all: 
 
 - [cJSON](https://github.com/DaveGamble/cJSON) 
 
-  用于参数解析和插值样本数据读取。
+  for parsing configuration file and reading sample point file.
 
-- AX=B线性方程组求解
+- solve Ax=B
 
   [Gaussian elimination](https://en.wikipedia.org/wiki/Gaussian_elimination#Pseudocode)
 
@@ -96,12 +98,11 @@ build/ordinary_kriging test/config.json
 
   [Triangular_matrix Forward_and_back_substitution](https://en.wikipedia.org/wiki/Triangular_matrix#Forward_and_back_substitution)
 
-  事实上普通克里金插值实现中求解线性方程组没必要对矩阵完全求逆进而求解权重。使用高斯消元法然后使用反向就可以求得权重。
+  There is no need to invert the hole matrix and than to solve Ax=B, using gaussian-dissolve and bask-substitution is enough.
 
-- 半变异模型
+- Seimvariogram Model
 
-  参考了该仓库的半变异模型: https://github.com/cnca/Kriging
+  This repository code is used: https://github.com/cnca/Kriging
 
 - Esri or ArcGIS
-
-  我只是模仿者。
+  interesting.
