@@ -81,7 +81,6 @@ None
 
 ### 4. Thinks
 
-程序的完成参考或使用了很多其他人的代码，在此一并感谢，如下：
 This project use a lot of codes from internet, thanks all: 
 
 - [cJSON](https://github.com/DaveGamble/cJSON) 
