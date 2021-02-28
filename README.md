@@ -75,7 +75,6 @@ Configuration introduction
 ```
 
 ### 3. License
-### 3. Credit
 
 None
 
