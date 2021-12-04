@@ -1,6 +1,6 @@
 ## Ordinary Kriging Interpolation
 
-This is an c language implemetation of kriging interpolation algorithm using arcgis searching strategy.
+This is an c language implemetation of kriging interpolation algorithm using the same searching strategy in arcgis.
 
 ### 1. Highlights
 
