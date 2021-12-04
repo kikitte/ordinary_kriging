@@ -1,16 +1,16 @@
 ## Ordinary Kriging Interpolation
 
-This is an c language implemetation using arcgis searching strategy.
+This is an c language implemetation of kriging interpolation algorithm using arcgis searching strategy.
 
-### 1. Highlight
+### 1. Highlights
 
-- Use arcgis searching strategy to search neighbords of pixel. It produce the same result if semivariogram and it's parameter are the same.
-- Thread level paralle. The speed is 4x than ArcGIS.
+- Using arcgis searching strategy to search neighbords of pixel. It produces the same result if semivariogram and the parameters are the same.
+- Thread level paralle. The speed is 4x faster than ArcGIS.
 - Configuring in json file.
 
 ### 2. How to use
 
-You might install GDAL in your computer, but as it may be different among diffent system, so we ignore it here.
+You need to install GDAL and relating tools(eg. c compiler, make tool) in your computer, but as it may be different between diffent system, so we ignore it here.
 
 ```bash
 # clone soure code
@@ -100,7 +100,6 @@ This project use a lot of codes from internet, thanks all:
 
 - Seimvariogram Model
 
-  This repository code is used: https://github.com/cnca/Kriging
+  This repository code is used in the project: https://github.com/cnca/Kriging
 
-- Esri or ArcGIS
-  interesting.
+- Esri or ArcGIS.
